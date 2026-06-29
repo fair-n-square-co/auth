@@ -7,8 +7,6 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -29,24 +27,6 @@ type CreateUserParams struct {
 // (CreateUser :one, GetUserBy... :one).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.OidcIssuer, arg.OidcSubject, arg.Email)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.OidcIssuer,
-		&i.OidcSubject,
-		&i.Email,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, oidc_issuer, oidc_subject, email, created_at FROM users
-WHERE id = $1
-`
-
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
 	err := row.Scan(
 		&i.ID,

@@ -10,7 +10,3 @@ RETURNING *;
 -- name: GetUserByIssuerSubject :one
 SELECT * FROM users
 WHERE oidc_issuer = $1 AND oidc_subject = $2;
-
--- name: GetUserByID :one
-SELECT * FROM users
-WHERE id = $1;

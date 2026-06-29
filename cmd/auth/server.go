@@ -46,9 +46,13 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 // newMux builds the HTTP mux exposing the identity service, gRPC health, and
 // gRPC reflection, all wrapped with the shared logging/recovery interceptors.
 func newMux(pool *pgxpool.Pool, logger *slog.Logger) *http.ServeMux {
+	// Order matters: the sanitizer is outermost so it has the final say on the
+	// client-facing error; logging runs inside it so it still records the full
+	// error; recovery is innermost, closest to the handler, to catch panics.
 	interceptors := connect.WithInterceptors(
-		middleware.NewRecoveryInterceptor(logger),
+		middleware.NewErrorSanitizerInterceptor(),
 		middleware.NewLoggingInterceptor(logger),
+		middleware.NewRecoveryInterceptor(logger),
 	)
 
 	identitySrv := api.NewIdentityServer(service.NewIdentityService(repository.New(pool)))

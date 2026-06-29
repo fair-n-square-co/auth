@@ -62,16 +62,18 @@ func (s *IdentityServer) ResolveUser(
 		case errors.Is(err, service.ErrEmailAlreadyLinked):
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)
 		default:
+			// Pass the full cause: the logging interceptor records it and the
+			// sanitizer interceptor strips it from the client-facing response.
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 	}
 
 	return connect.NewResponse(&authxpb.ResolveUserResponse{
+		// Return only the canonical id and normalized email; the caller already
+		// supplied issuer/subject, so we don't echo them back (see User proto).
 		User: &authxpb.User{
-			Id:      user.ID,
-			Email:   user.Email,
-			Issuer:  user.Issuer,
-			Subject: user.Subject,
+			Id:    user.ID,
+			Email: user.Email,
 		},
 		Created: created,
 	}), nil
