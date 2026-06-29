@@ -1,0 +1,11 @@
+port: 8081
+logger:
+  level: 0
+  format: json
+db:
+  connString: ""
+  maxConns: 10
+  minConns: 2
+  maxConnLifetime: 1h
+  maxConnIdleTime: 30m
+  healthCheckPeriod: 1m

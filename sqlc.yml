@@ -1,0 +1,10 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "db/auth/queries/"
+    schema: "db/auth/migrations/"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/auth/db/sqlc"
+        sql_package: "pgx/v5"
