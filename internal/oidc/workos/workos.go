@@ -5,9 +5,16 @@ package workos
 
 import (
 	"context"
-	"errors"
+	"strings"
 
 	"github.com/fair-n-square-co/auth/internal/oidc"
+)
+
+// Standard OIDC claim names carried in a WorkOS ID token.
+const (
+	claimIssuer  = "iss"
+	claimSubject = "sub"
+	claimEmail   = "email"
 )
 
 // Provider is the WorkOS implementation of oidc.Provider.
@@ -18,15 +25,30 @@ type Provider struct {
 
 // New constructs a WorkOS Provider.
 func New() *Provider {
-	// TODO(impl): accept OIDC config (issuer, client id) once it exists.
 	return &Provider{}
 }
 
-// Normalize maps WorkOS claims into provider-neutral oidc.IdentityClaims.
+// Normalize maps WorkOS claims into provider-neutral oidc.IdentityClaims,
+// trimming whitespace and validating that the required fields are present.
 func (p *Provider) Normalize(ctx context.Context, raw oidc.RawClaims) (oidc.IdentityClaims, error) {
-	// TODO(impl): read iss/sub/email from `raw`, trim, validate non-empty,
-	// return oidc.ErrMissingClaim on any missing field.
-	return oidc.IdentityClaims{}, errors.New("not implemented")
+	claims := oidc.IdentityClaims{
+		Issuer:  strings.TrimSpace(stringClaim(raw, claimIssuer)),
+		Subject: strings.TrimSpace(stringClaim(raw, claimSubject)),
+		Email:   strings.TrimSpace(stringClaim(raw, claimEmail)),
+	}
+	if err := claims.Validate(); err != nil {
+		return oidc.IdentityClaims{}, err
+	}
+	return claims, nil
+}
+
+// stringClaim reads key from raw as a string, returning "" when absent or not a
+// string so validation (not a type assertion panic) reports the problem.
+func stringClaim(raw oidc.RawClaims, key string) string {
+	if v, ok := raw[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // compile-time check that *Provider satisfies oidc.Provider.

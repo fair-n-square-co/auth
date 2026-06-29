@@ -10,10 +10,16 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/grpchealth"
+	"connectrpc.com/grpcreflect"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/fair-n-square-co/apis/gen/pkg/fairnsquare/service/authx/v1alpha1/authxpbconnect"
 	"github.com/fair-n-square-co/auth/cmd/auth/config"
+	"github.com/fair-n-square-co/auth/internal/identity/api"
+	"github.com/fair-n-square-co/auth/internal/identity/repository"
+	"github.com/fair-n-square-co/auth/internal/identity/service"
 	"github.com/fair-n-square-co/auth/pkg/middleware"
 )
 
@@ -39,23 +45,24 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 
 // newMux builds the HTTP mux exposing the identity service, gRPC health, and
 // gRPC reflection, all wrapped with the shared logging/recovery interceptors.
-//
-// TODO(impl): register the identity handler once the authx proto is generated:
-//
-//	identitySrv := api.NewIdentityServer(
-//	    service.NewIdentityService(repository.New(pool)),
-//	)
-//	mux.Handle(authxpbconnect.NewIdentityServiceHandler(identitySrv, interceptors))
-//	// + grpchealth + grpcreflect for authxpbconnect.IdentityServiceName
 func newMux(pool *pgxpool.Pool, logger *slog.Logger) *http.ServeMux {
 	interceptors := connect.WithInterceptors(
 		middleware.NewRecoveryInterceptor(logger),
 		middleware.NewLoggingInterceptor(logger),
 	)
 
+	identitySrv := api.NewIdentityServer(service.NewIdentityService(repository.New(pool)))
+
 	mux := http.NewServeMux()
-	_ = interceptors // TODO(impl): pass to NewIdentityServiceHandler
-	_ = pool          // TODO(impl): inject into repository.New(pool)
+	mux.Handle(authxpbconnect.NewIdentityServiceHandler(identitySrv, interceptors))
+
+	checker := grpchealth.NewStaticChecker(authxpbconnect.IdentityServiceName)
+	mux.Handle(grpchealth.NewHandler(checker))
+
+	reflector := grpcreflect.NewStaticReflector(authxpbconnect.IdentityServiceName)
+	mux.Handle(grpcreflect.NewHandlerV1(reflector))
+	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
+
 	return mux
 }
 

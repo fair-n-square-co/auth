@@ -1,0 +1,171 @@
+name: Release images
+
+# Builds and publishes both container images to GHCR:
+#   ghcr.io/fair-n-square-co/auth           (the service)      <- Dockerfile.auth
+#   ghcr.io/fair-n-square-co/auth/migrate   (goose runner)     <- Dockerfile.migrate
+#
+# Triggers:
+#   - push to main         -> :edge and :sha-<short> (dev builds)
+#   - push tag v*          -> :X.Y.Z, :X.Y, :latest (semver releases)
+#   - manual dispatch      -> :X.Y.Z-alpha.<run> pre-release from any branch.
+#                             svu computes the next semver from conventional
+#                             commits; --always guarantees it's ahead of the
+#                             last release. Pre-releases never get :latest/:edge.
+#
+# Supply-chain controls per image: SBOM + SLSA build provenance (buildx),
+# Trivy HIGH/CRITICAL gate, cosign keyless signature, and a GitHub-native
+# build-provenance attestation. All images and bases are digest-pinned.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Pre-release version bump (auto = derive from conventional commits)'
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Only runs for manual dispatch: derives the X.Y.Z-alpha.<run> pre-release tag.
+  version:
+    name: Compute pre-release tag
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      tag: ${{ steps.svu.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0          # svu needs full history + tags
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install svu
+        run: go install github.com/caarlos0/svu/v3@v3.4.1
+
+      - name: Compute pre-release tag
+        id: svu
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRE: alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          if [ "$BUMP" = "auto" ]; then
+            tag=$(svu next --always --prerelease "$PRE")
+          else
+            tag=$(svu "$BUMP" --prerelease "$PRE")
+          fi
+          echo "Computed pre-release tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [version]
+    # Runs on push (version skipped) and on dispatch (version succeeded).
+    # always() forces evaluation when `version` is skipped; the result guard
+    # still blocks the build if `version` actually failed.
+    if: ${{ always() && !cancelled() && needs.version.result != 'failure' }}
+    name: Build & publish (${{ matrix.image.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # checkout
+      packages: write       # push images to GHCR
+      id-token: write       # OIDC for cosign keyless + provenance attestation
+      attestations: write   # actions/attest-build-provenance
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: auth
+            dockerfile: Dockerfile.auth
+            repo: ghcr.io/fair-n-square-co/auth
+          - name: migrate
+            dockerfile: Dockerfile.migrate
+            repo: ghcr.io/fair-n-square-co/auth/migrate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ matrix.image.repo }}
+          # latest=auto -> 'latest' is attached only to the highest semver tag,
+          # never to main builds.
+          flavor: |
+            latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # edge is for main-branch pushes only; a manual prerelease run from
+            # main must never publish/overwrite it.
+            type=edge,branch=main,enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=sha
+            type=raw,value=${{ needs.version.outputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Gate: fail the job (before signing) on fixable HIGH/CRITICAL vulns.
+      # Scans the exact pushed digest. A failure here leaves the image pushed
+      # but UNSIGNED, so signature-verifying deploys will refuse it.
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image.repo }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign image (keyless)
+        run: cosign sign --yes "${{ matrix.image.repo }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ matrix.image.repo }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

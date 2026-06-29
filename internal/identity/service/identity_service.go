@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/fair-n-square-co/auth/internal/identity/repository"
 	"github.com/fair-n-square-co/auth/internal/oidc"
@@ -26,12 +27,13 @@ type User struct {
 // Repository is the data-access surface the identity service depends on. It is
 // an interface so the service can be unit-tested with a generated mock.
 //
-//go:generate go run go.uber.org/mock/mockgen -destination=mocks/repository.go -package=mocks . Repository
+//go:generate go tool mockgen -destination=mocks/repository.go -package=mocks . Repository
 type Repository interface {
-	// GetByIssuerSubject returns the user linked to (issuer, subject), or a
-	// not-found error the service can detect.
+	// GetByIssuerSubject returns the user linked to (issuer, subject), or
+	// repository.ErrNotFound when none exists.
 	GetByIssuerSubject(ctx context.Context, issuer, subject string) (repository.User, error)
-	// Create inserts a new canonical user with the given identity link.
+	// Create inserts a new canonical user, returning repository.ErrConflict on a
+	// concurrent unique-constraint collision.
 	Create(ctx context.Context, issuer, subject, email string) (repository.User, error)
 }
 
@@ -46,21 +48,51 @@ func NewIdentityService(repo Repository) *IdentityService {
 }
 
 // ResolveOrProvision returns the canonical user for the given verified identity,
-// creating or linking it on first login (JIT). It MUST be idempotent: the same
-// claims always resolve to the same internal id.
-//
-// Intended algorithm (TODO(impl)):
-//  1. Validate claims (issuer, subject, email non-empty) -> ErrInvalidClaims.
-//  2. Look up by (issuer, subject); if found, return it.
-//  3. Else Create a new canonical user.
-//  4. On a UNIQUE violation from a concurrent first login, re-read by
-//     (issuer, subject) so the call stays idempotent.
+// creating it on first login (JIT). It is idempotent: the same claims always
+// resolve to the same internal id. The returned bool is true only when this
+// call provisioned a new user.
 //
 // Note: the "existing email, new subject" re-link path is intentionally out of
-// scope for now (we don't need UpdateUserIdentity yet). With Google-via-WorkOS
-// the `sub` is stable, so re-provisioning under a new sub is not a real case
-// until we add more OIDC connections — revisit then.
-func (s *IdentityService) ResolveOrProvision(ctx context.Context, claims oidc.IdentityClaims) (User, error) {
-	// TODO(impl): implement the steps above.
-	return User{}, errors.New("not implemented")
+// scope for now. With Google-via-WorkOS the `sub` is stable, so re-provisioning
+// under a new sub is not a real case until we add more OIDC connections —
+// revisit then.
+func (s *IdentityService) ResolveOrProvision(ctx context.Context, claims oidc.IdentityClaims) (User, bool, error) {
+	if err := claims.Validate(); err != nil {
+		return User{}, false, fmt.Errorf("%w: %w", ErrInvalidClaims, err)
+	}
+
+	// Fast path: the user already exists.
+	existing, err := s.repo.GetByIssuerSubject(ctx, claims.Issuer, claims.Subject)
+	if err == nil {
+		return toServiceUser(existing), false, nil
+	}
+	if !errors.Is(err, repository.ErrNotFound) {
+		return User{}, false, err
+	}
+
+	// First login: provision the canonical user.
+	created, err := s.repo.Create(ctx, claims.Issuer, claims.Subject, claims.Email)
+	if err == nil {
+		return toServiceUser(created), true, nil
+	}
+	// A concurrent first login won the race; the row now exists, so re-read it
+	// and report it as not-newly-created. This keeps the call idempotent.
+	if errors.Is(err, repository.ErrConflict) {
+		raced, getErr := s.repo.GetByIssuerSubject(ctx, claims.Issuer, claims.Subject)
+		if getErr != nil {
+			return User{}, false, fmt.Errorf("re-read after create conflict: %w", getErr)
+		}
+		return toServiceUser(raced), false, nil
+	}
+	return User{}, false, err
+}
+
+// toServiceUser maps a repository user into the service-level view.
+func toServiceUser(u repository.User) User {
+	return User{
+		ID:      u.ID,
+		Email:   u.Email,
+		Issuer:  u.Issuer,
+		Subject: u.Subject,
+	}
 }

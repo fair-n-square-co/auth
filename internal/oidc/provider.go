@@ -9,10 +9,11 @@ package oidc
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
-// ErrMissingClaim is returned by a Provider when a required claim (issuer,
-// subject, or email) is absent or empty after normalization.
+// ErrMissingClaim is returned when a required claim (issuer, subject, or email)
+// is absent or empty.
 var ErrMissingClaim = errors.New("oidc: missing required claim")
 
 // IdentityClaims is the normalized, provider-neutral identity of an
@@ -24,9 +25,20 @@ type IdentityClaims struct {
 	Issuer string
 	// Subject is the OIDC `sub` — the provider's stable user identifier.
 	Subject string
-	// Email is the user's email at the provider. Used as the JIT link key when
-	// an identity is re-provisioned under a new Subject.
+	// Email is the user's email at the provider.
 	Email string
+}
+
+// Validate reports whether the claims carry the required fields. It does not
+// mutate; callers that want trimming should use TrimSpace first. Returns
+// ErrMissingClaim when issuer, subject, or email is empty.
+func (c IdentityClaims) Validate() error {
+	if strings.TrimSpace(c.Issuer) == "" ||
+		strings.TrimSpace(c.Subject) == "" ||
+		strings.TrimSpace(c.Email) == "" {
+		return ErrMissingClaim
+	}
+	return nil
 }
 
 // Provider turns provider-specific input into normalized IdentityClaims.
@@ -45,8 +57,5 @@ type Provider interface {
 
 // RawClaims is the loosely-typed claim set handed to a Provider before
 // normalization. The concrete shape is provider-defined; this keeps the seam
-// from leaking WorkOS-specific types upward.
-//
-// TODO(impl): decide the carrier — a map[string]any decoded from the ID token,
-// or a small typed struct populated by the BFF. Keep it provider-neutral.
+// from leaking provider-specific types upward.
 type RawClaims map[string]any

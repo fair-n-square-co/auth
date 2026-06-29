@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+
+# Generic goose runner: a single static goose binary with this service's
+# migrations baked in, so the image is an immutable, versioned schema artifact.
+# Usage mirrors `docker run`:
+#   docker run --rm -e GOOSE_DBSTRING="postgres://..." <img> up
+#   docker run --rm -e GOOSE_DBSTRING="postgres://..." <img> status
+#   docker run --rm -e GOOSE_DBSTRING="postgres://..." <img> down
+
+# --- Build stage -------------------------------------------------------------
+# Pinned by index digest; Dependabot (docker ecosystem) keeps it current.
+FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS builder
+
+# goose is pinned to an exact tag; integrity is verified at build time against
+# the Go checksum database (sum.golang.org). Bump this to upgrade goose.
+ARG GOOSE_VERSION=v3.27.1
+
+# Postgres-only, fully static (CGO off): drop the other drivers, including the
+# only CGO-dependent one (sqlite). -trimpath/-s -w keep the binary small.
+RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" \
+      -tags='no_sqlite3 no_clickhouse no_mssql no_mysql' \
+      github.com/pressly/goose/v3/cmd/goose@${GOOSE_VERSION}
+
+# --- Runtime stage -----------------------------------------------------------
+FROM gcr.io/distroless/static-debian12@sha256:9c346e4be81b5ca7ff31a0d89eaeade58b0f95cfd3baed1f36083ddb47ca3160
+USER nonroot:nonroot
+
+COPY --from=builder --chown=nonroot:nonroot /go/bin/goose /goose
+COPY --chown=nonroot:nonroot db/auth/migrations /migrations
+
+# Driver and migrations dir are fixed for this image; the connection string
+# (GOOSE_DBSTRING) is supplied at run time and never baked in.
+ENV GOOSE_DRIVER=postgres \
+    GOOSE_MIGRATION_DIR=/migrations
+
+ENTRYPOINT ["/goose"]
+# Default to applying all migrations; override with any goose subcommand.
+CMD ["up"]
+
+LABEL org.opencontainers.image.title="auth-migrate" \
+      org.opencontainers.image.description="goose migration runner for the Fair'n'Square auth schema" \
+      org.opencontainers.image.source="https://github.com/fair-n-square-co/auth" \
+      org.opencontainers.image.licenses="UNLICENSED"

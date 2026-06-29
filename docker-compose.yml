@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:17
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-auth}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 1s
+      timeout: 30s
+      retries: 3
+
+  # One-shot: applies migrations, then exits. Mirrors the two-step CD flow.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    command: ["up"]
+    environment:
+      GOOSE_DBSTRING: ${AUTH_DB_CONNSTRING:?AUTH_DB_CONNSTRING is required}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    ports:
+      - "8081:8081"
+    environment:
+      AUTH_DB_CONNSTRING: ${AUTH_DB_CONNSTRING:?AUTH_DB_CONNSTRING is required}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db_data:

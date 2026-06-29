@@ -1,0 +1,8 @@
+.git
+.idea
+**/.DS_Store
+bin
+tmp
+.tmp
+cover.out
+**/gha-creds-*.json
