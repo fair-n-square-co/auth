@@ -12,10 +12,11 @@ CREATE TABLE users (
   oidc_subject text        NOT NULL,                              -- OIDC `sub`
   email        citext      NOT NULL,
   created_at   timestamptz NOT NULL DEFAULT now(),
-  updated_at   timestamptz NOT NULL DEFAULT now(),
 
-  UNIQUE (oidc_issuer, oidc_subject), -- one canonical user per external identity
-  UNIQUE (email)
+  -- Constraints are named so the repository can tell which one a unique
+  -- violation hit (the identity race vs. an email already linked elsewhere).
+  CONSTRAINT users_identity_key UNIQUE (oidc_issuer, oidc_subject),
+  CONSTRAINT users_email_key UNIQUE (email)
 );
 -- +goose StatementEnd
 

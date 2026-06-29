@@ -103,6 +103,44 @@ func TestResolveOrProvision_ConcurrentRace(t *testing.T) {
 	assert.Equal(t, userID, got.ID)
 }
 
+// TestResolveOrProvision_EmailTaken covers a first login whose email already
+// belongs to a different identity: Create reports repository.ErrEmailTaken, and
+// the service rejects cleanly with ErrEmailAlreadyLinked (no re-read), which the
+// api layer maps to AlreadyExists rather than a 500.
+func TestResolveOrProvision_EmailTaken(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockRepository(ctrl)
+
+	repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(repository.User{}, repository.ErrNotFound)
+	repo.EXPECT().Create(gomock.Any(), issuer, subject, email).Return(repository.User{}, repository.ErrEmailTaken)
+	// No second GetByIssuerSubject: the email case must not re-read.
+
+	svc := service.NewIdentityService(repo)
+	_, created, err := svc.ResolveOrProvision(context.Background(), validClaims())
+
+	require.ErrorIs(t, err, service.ErrEmailAlreadyLinked)
+	assert.False(t, created)
+}
+
+// TestResolveOrProvision_NormalizesClaims asserts surrounding whitespace is
+// trimmed before lookup/persistence so a padded claim resolves the same identity.
+func TestResolveOrProvision_NormalizesClaims(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockRepository(ctrl)
+
+	// Padded claims must reach the repository trimmed.
+	repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(storedUser(), nil)
+
+	svc := service.NewIdentityService(repo)
+	_, _, err := svc.ResolveOrProvision(context.Background(), oidc.IdentityClaims{
+		Issuer:  "  " + issuer + "  ",
+		Subject: subject + "\n",
+		Email:   "  " + email,
+	})
+
+	require.NoError(t, err)
+}
+
 func TestResolveOrProvision_LookupError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := mocks.NewMockRepository(ctrl)

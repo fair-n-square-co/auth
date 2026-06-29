@@ -5,7 +5,6 @@ package workos
 
 import (
 	"context"
-	"strings"
 
 	"github.com/fair-n-square-co/auth/internal/oidc"
 )
@@ -32,10 +31,10 @@ func New() *Provider {
 // trimming whitespace and validating that the required fields are present.
 func (p *Provider) Normalize(ctx context.Context, raw oidc.RawClaims) (oidc.IdentityClaims, error) {
 	claims := oidc.IdentityClaims{
-		Issuer:  strings.TrimSpace(stringClaim(raw, claimIssuer)),
-		Subject: strings.TrimSpace(stringClaim(raw, claimSubject)),
-		Email:   strings.TrimSpace(stringClaim(raw, claimEmail)),
-	}
+		Issuer:  stringClaim(raw, claimIssuer),
+		Subject: stringClaim(raw, claimSubject),
+		Email:   stringClaim(raw, claimEmail),
+	}.Normalized()
 	if err := claims.Validate(); err != nil {
 		return oidc.IdentityClaims{}, err
 	}

@@ -37,7 +37,7 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:17-alpine",
 		postgres.WithDatabase("auth"),
 		postgres.WithUsername("auth"),
 		postgres.WithPassword("auth"),
@@ -90,6 +90,18 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, second.Msg.GetCreated(), "second login should not re-provision")
 	assert.Equal(t, first.Msg.GetUser().GetId(), second.Msg.GetUser().GetId())
+
+	// A different identity (new subject) reusing the same email must be rejected
+	// cleanly as AlreadyExists, not surface as a 500. This exercises the real
+	// constraint-name detection (users_email_key) against Postgres.
+	conflict, err := client.ResolveUser(ctx, connect.NewRequest(&authxpb.ResolveUserRequest{
+		Issuer:  "https://example.workos.com",
+		Subject: "user_DIFFERENT",
+		Email:   "alice@example.com",
+	}))
+	require.Nil(t, conflict)
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeAlreadyExists, connect.CodeOf(err))
 }
 
 // TestResolveUser_InvalidClaims asserts missing claims map to InvalidArgument.

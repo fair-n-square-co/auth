@@ -19,13 +19,23 @@ import (
 // detects it (errors.Is) to decide whether to provision a new user.
 var ErrNotFound = errors.New("user not found")
 
-// ErrConflict is returned when an insert violates a unique constraint — e.g. a
-// concurrent first login created the same (issuer, subject) first. The service
-// treats it as a signal to re-read and stay idempotent.
-var ErrConflict = errors.New("user already exists")
+// ErrConflict is returned when an insert collides on the (issuer, subject)
+// identity — e.g. a concurrent first login created the same identity first. The
+// service treats it as a signal to re-read and stay idempotent.
+var ErrConflict = errors.New("user identity already exists")
 
-// uniqueViolation is the Postgres SQLSTATE for unique_violation.
-const uniqueViolation = "23505"
+// ErrEmailTaken is returned when an insert collides on the email — the same
+// email is already linked to a *different* OIDC identity. Distinct from
+// ErrConflict so the service can reject it cleanly rather than re-reading.
+var ErrEmailTaken = errors.New("email already linked to another identity")
+
+// uniqueViolation is the Postgres SQLSTATE for unique_violation. The constraint
+// names are declared in the users migration so we can tell the two apart.
+const (
+	uniqueViolation    = "23505"
+	constraintIdentity = "users_identity_key"
+	constraintEmail    = "users_email_key"
+)
 
 // User is the repository-level view of a users row. Identifiers are canonical
 // UUID strings so layers above never depend on pgtype.
@@ -72,7 +82,15 @@ func (r *Repository) Create(ctx context.Context, issuer, subject, email string) 
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-			return User{}, ErrConflict
+			switch pgErr.ConstraintName {
+			case constraintEmail:
+				return User{}, ErrEmailTaken
+			case constraintIdentity:
+				return User{}, ErrConflict
+			default:
+				// Unknown unique constraint: surface it rather than masking.
+				return User{}, fmt.Errorf("create user: unexpected unique violation on %q: %w", pgErr.ConstraintName, err)
+			}
 		}
 		return User{}, fmt.Errorf("create user: %w", err)
 	}

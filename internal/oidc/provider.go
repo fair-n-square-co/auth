@@ -29,9 +29,20 @@ type IdentityClaims struct {
 	Email string
 }
 
-// Validate reports whether the claims carry the required fields. It does not
-// mutate; callers that want trimming should use TrimSpace first. Returns
-// ErrMissingClaim when issuer, subject, or email is empty.
+// Normalized returns a copy with surrounding whitespace trimmed from every
+// field. Callers should normalize before persisting or looking up so a stray
+// space in a claim can't fragment one identity across two rows.
+func (c IdentityClaims) Normalized() IdentityClaims {
+	return IdentityClaims{
+		Issuer:  strings.TrimSpace(c.Issuer),
+		Subject: strings.TrimSpace(c.Subject),
+		Email:   strings.TrimSpace(c.Email),
+	}
+}
+
+// Validate reports whether the claims carry the required fields, returning
+// ErrMissingClaim when issuer, subject, or email is blank. It trims only for the
+// emptiness check; call Normalized first if you intend to persist the values.
 func (c IdentityClaims) Validate() error {
 	if strings.TrimSpace(c.Issuer) == "" ||
 		strings.TrimSpace(c.Subject) == "" ||

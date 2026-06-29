@@ -24,6 +24,12 @@ type IdentityService interface {
 // IdentityServer implements the connect IdentityService handler. It exposes the
 // JIT entrypoint the BFF calls after a successful WorkOS login. Methods not yet
 // implemented fall through to UnimplementedIdentityServiceHandler.
+//
+// TRUST BOUNDARY: ResolveUser trusts the claims in the request as already
+// verified by the caller (the BFF). The service does NOT yet validate the token
+// signature itself — JWKS verification lands in FNS-95. Until then the service
+// must be reachable only by trusted callers (network isolation / mTLS), since
+// anyone who can call it could provision or resolve an arbitrary identity.
 type IdentityServer struct {
 	authxpbconnect.UnimplementedIdentityServiceHandler
 	svc IdentityService
@@ -50,10 +56,14 @@ func (s *IdentityServer) ResolveUser(
 
 	user, created, err := s.svc.ResolveOrProvision(ctx, claims)
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidClaims) {
+		switch {
+		case errors.Is(err, service.ErrInvalidClaims):
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		case errors.Is(err, service.ErrEmailAlreadyLinked):
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		default:
+			return nil, connect.NewError(connect.CodeInternal, err)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	return connect.NewResponse(&authxpb.ResolveUserResponse{

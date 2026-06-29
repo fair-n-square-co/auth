@@ -14,5 +14,4 @@ type User struct {
 	OidcSubject string
 	Email       string
 	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
 }

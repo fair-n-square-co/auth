@@ -15,7 +15,7 @@ const createUser = `-- name: CreateUser :one
 
 INSERT INTO users (oidc_issuer, oidc_subject, email)
 VALUES ($1, $2, $3)
-RETURNING id, oidc_issuer, oidc_subject, email, created_at, updated_at
+RETURNING id, oidc_issuer, oidc_subject, email, created_at
 `
 
 type CreateUserParams struct {
@@ -36,13 +36,12 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.OidcSubject,
 		&i.Email,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, oidc_issuer, oidc_subject, email, created_at, updated_at FROM users
+SELECT id, oidc_issuer, oidc_subject, email, created_at FROM users
 WHERE id = $1
 `
 
@@ -55,13 +54,12 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.OidcSubject,
 		&i.Email,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getUserByIssuerSubject = `-- name: GetUserByIssuerSubject :one
-SELECT id, oidc_issuer, oidc_subject, email, created_at, updated_at FROM users
+SELECT id, oidc_issuer, oidc_subject, email, created_at FROM users
 WHERE oidc_issuer = $1 AND oidc_subject = $2
 `
 
@@ -79,7 +77,6 @@ func (q *Queries) GetUserByIssuerSubject(ctx context.Context, arg GetUserByIssue
 		&i.OidcSubject,
 		&i.Email,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
