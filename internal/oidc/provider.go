@@ -30,13 +30,17 @@ type IdentityClaims struct {
 }
 
 // Normalized returns a copy with surrounding whitespace trimmed from every
-// field. Callers should normalize before persisting or looking up so a stray
-// space in a claim can't fragment one identity across two rows.
+// field, and email lower-cased. Callers should normalize before persisting or
+// looking up so a stray space — or a differently-cased email like
+// Alice@Example.com vs alice@example.com — can't fragment one identity across
+// two rows. (The email column is citext, so the DB already compares
+// case-insensitively; lower-casing here makes the stored/returned form canonical
+// and keeps the rule consistent across providers.)
 func (c IdentityClaims) Normalized() IdentityClaims {
 	return IdentityClaims{
 		Issuer:  strings.TrimSpace(c.Issuer),
 		Subject: strings.TrimSpace(c.Subject),
-		Email:   strings.TrimSpace(c.Email),
+		Email:   strings.ToLower(strings.TrimSpace(c.Email)),
 	}
 }
 

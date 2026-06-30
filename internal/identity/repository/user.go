@@ -71,7 +71,8 @@ func (r *Repository) GetByIssuerSubject(ctx context.Context, issuer, subject str
 }
 
 // Create inserts a new canonical user with the given identity link. A unique
-// violation (concurrent insert) is returned as ErrConflict.
+// violation on (oidc_issuer, oidc_subject) is returned as ErrConflict; a
+// violation on email is returned as ErrEmailTaken.
 func (r *Repository) Create(ctx context.Context, issuer, subject, email string) (User, error) {
 	row, err := r.q.CreateUser(ctx, sqlc.CreateUserParams{
 		OidcIssuer:  issuer,

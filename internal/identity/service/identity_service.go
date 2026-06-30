@@ -37,8 +37,9 @@ type Repository interface {
 	// GetByIssuerSubject returns the user linked to (issuer, subject), or
 	// repository.ErrNotFound when none exists.
 	GetByIssuerSubject(ctx context.Context, issuer, subject string) (repository.User, error)
-	// Create inserts a new canonical user, returning repository.ErrConflict on a
-	// concurrent unique-constraint collision.
+	// Create inserts a new canonical user. On a unique-constraint collision it
+	// returns repository.ErrConflict for the (issuer, subject) identity or
+	// repository.ErrEmailTaken for the email.
 	Create(ctx context.Context, issuer, subject, email string) (repository.User, error)
 }
 
@@ -83,18 +84,28 @@ func (s *IdentityService) ResolveOrProvision(ctx context.Context, claims oidc.Id
 	switch {
 	case err == nil:
 		return toServiceUser(created), true, nil
-	case errors.Is(err, repository.ErrConflict):
-		// A concurrent first login won the identity race; the row now exists, so
-		// re-read it and report it as not-newly-created (keeps the call idempotent).
+	case errors.Is(err, repository.ErrConflict), errors.Is(err, repository.ErrEmailTaken):
+		// A concurrent insert collided on a unique constraint. Postgres reports only
+		// one of the violated constraints and the choice is non-deterministic, so we
+		// can't trust which one we were handed: an identical concurrent first login
+		// can lose on the email index even though it's the *same* (issuer, subject).
+		// Re-read by identity to stay idempotent — return the existing row when it's
+		// ours, and only treat it as a real email conflict when no row exists for us.
 		raced, getErr := s.repo.GetByIssuerSubject(ctx, claims.Issuer, claims.Subject)
-		if getErr != nil {
-			return User{}, false, fmt.Errorf("re-read after identity conflict: %w", getErr)
+		switch {
+		case getErr == nil:
+			return toServiceUser(raced), false, nil
+		case !errors.Is(getErr, repository.ErrNotFound):
+			return User{}, false, fmt.Errorf("re-read after unique conflict: %w", getErr)
+		case errors.Is(err, repository.ErrEmailTaken):
+			// No row for our identity: the email is linked to a different identity.
+			// We don't auto-relink (out of scope), so reject cleanly rather than 500.
+			return User{}, false, ErrEmailAlreadyLinked
+		default:
+			// Identity conflict but no row on re-read — shouldn't happen (we never
+			// delete users). Surface it rather than masking.
+			return User{}, false, fmt.Errorf("identity conflict but no row on re-read: %w", err)
 		}
-		return toServiceUser(raced), false, nil
-	case errors.Is(err, repository.ErrEmailTaken):
-		// The email is already linked to a different identity. We don't auto-relink
-		// (out of scope), so reject cleanly rather than 500.
-		return User{}, false, ErrEmailAlreadyLinked
 	default:
 		return User{}, false, err
 	}

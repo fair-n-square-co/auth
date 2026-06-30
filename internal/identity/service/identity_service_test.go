@@ -103,23 +103,49 @@ func TestResolveOrProvision_ConcurrentRace(t *testing.T) {
 	assert.Equal(t, userID, got.ID)
 }
 
-// TestResolveOrProvision_EmailTaken covers a first login whose email already
-// belongs to a different identity: Create reports repository.ErrEmailTaken, and
-// the service rejects cleanly with ErrEmailAlreadyLinked (no re-read), which the
-// api layer maps to AlreadyExists rather than a 500.
-func TestResolveOrProvision_EmailTaken(t *testing.T) {
+// TestResolveOrProvision_EmailTakenByDifferentIdentity covers a first login
+// whose email already belongs to a *different* identity: Create reports
+// ErrEmailTaken, the re-read by (issuer, subject) finds no row of ours, so the
+// service rejects cleanly with ErrEmailAlreadyLinked (mapped to AlreadyExists).
+func TestResolveOrProvision_EmailTakenByDifferentIdentity(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := mocks.NewMockRepository(ctrl)
 
-	repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(repository.User{}, repository.ErrNotFound)
-	repo.EXPECT().Create(gomock.Any(), issuer, subject, email).Return(repository.User{}, repository.ErrEmailTaken)
-	// No second GetByIssuerSubject: the email case must not re-read.
+	gomock.InOrder(
+		repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(repository.User{}, repository.ErrNotFound),
+		repo.EXPECT().Create(gomock.Any(), issuer, subject, email).Return(repository.User{}, repository.ErrEmailTaken),
+		// Re-read confirms the email belongs to someone else, not us.
+		repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(repository.User{}, repository.ErrNotFound),
+	)
 
 	svc := service.NewIdentityService(repo)
 	_, created, err := svc.ResolveOrProvision(context.Background(), validClaims())
 
 	require.ErrorIs(t, err, service.ErrEmailAlreadyLinked)
 	assert.False(t, created)
+}
+
+// TestResolveOrProvision_ConcurrentRaceReportedAsEmail covers the subtle case
+// where an identical concurrent first login loses the insert, violating BOTH
+// unique indexes, and Postgres happens to report the email constraint. The
+// service must still re-read and resolve idempotently to the racing winner
+// rather than wrongly rejecting it as an email conflict.
+func TestResolveOrProvision_ConcurrentRaceReportedAsEmail(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockRepository(ctrl)
+
+	gomock.InOrder(
+		repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(repository.User{}, repository.ErrNotFound),
+		repo.EXPECT().Create(gomock.Any(), issuer, subject, email).Return(repository.User{}, repository.ErrEmailTaken),
+		repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(storedUser(), nil),
+	)
+
+	svc := service.NewIdentityService(repo)
+	got, created, err := svc.ResolveOrProvision(context.Background(), validClaims())
+
+	require.NoError(t, err)
+	assert.False(t, created, "the racing winner provisioned the user, so this call did not")
+	assert.Equal(t, userID, got.ID)
 }
 
 // TestResolveOrProvision_NormalizesClaims asserts surrounding whitespace is

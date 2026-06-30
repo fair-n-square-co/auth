@@ -23,7 +23,10 @@ services:
       dockerfile: Dockerfile.migrate
     command: ["up"]
     environment:
-      GOOSE_DBSTRING: ${AUTH_DB_CONNSTRING:?AUTH_DB_CONNSTRING is required}
+      # Derive the DSN from the same POSTGRES_* vars the db service uses so the
+      # stack can't migrate one database while serving another. Host is the db
+      # service name on the compose network.
+      GOOSE_DBSTRING: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-auth}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy
@@ -35,7 +38,8 @@ services:
     ports:
       - "8081:8081"
     environment:
-      AUTH_DB_CONNSTRING: ${AUTH_DB_CONNSTRING:?AUTH_DB_CONNSTRING is required}
+      # Same single source of truth as the db and migrate services (see above).
+      AUTH_DB_CONNSTRING: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-auth}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy
