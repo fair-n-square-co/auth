@@ -35,6 +35,7 @@ func TestResolveOrProvision_InvalidClaims(t *testing.T) {
 		"missing issuer":  {Subject: subject, Email: email},
 		"missing subject": {Issuer: issuer, Email: email},
 		"missing email":   {Issuer: issuer, Subject: subject},
+		"malformed email": {Issuer: issuer, Subject: subject, Email: "notanemail"},
 		"blank":           {},
 	}
 	for name, claims := range cases {

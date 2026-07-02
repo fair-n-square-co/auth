@@ -17,12 +17,17 @@ package oidc
 import (
 	"context"
 	"errors"
+	"net/mail"
 	"strings"
 )
 
 // ErrMissingClaim is returned when a required claim (issuer, subject, or email)
 // is absent or empty.
 var ErrMissingClaim = errors.New("oidc: missing required claim")
+
+// ErrInvalidEmail is returned when the email claim is present but not a valid
+// address, so malformed input is rejected before it reaches the canonical record.
+var ErrInvalidEmail = errors.New("oidc: invalid email")
 
 // ErrInvalidToken is returned by a Verifier when the presented token is absent,
 // malformed, or (from FNS-95 on) fails signature/issuer/audience/expiry checks.
@@ -81,13 +86,20 @@ func (c IdentityClaims) Normalized() IdentityClaims {
 }
 
 // Validate reports whether the claims carry the required fields, returning
-// ErrMissingClaim when issuer, subject, or email is blank. It trims only for the
-// emptiness check; call Normalized first if you intend to persist the values.
+// ErrMissingClaim when issuer, subject, or email is blank and ErrInvalidEmail
+// when the email is present but malformed. It trims only for these checks; call
+// Normalized first if you intend to persist the values.
 func (c IdentityClaims) Validate() error {
+	email := strings.TrimSpace(c.Email)
 	if strings.TrimSpace(c.Issuer) == "" ||
 		strings.TrimSpace(c.Subject) == "" ||
-		strings.TrimSpace(c.Email) == "" {
+		email == "" {
 		return ErrMissingClaim
+	}
+	// Require a bare, parseable address: mail.ParseAddress also accepts the
+	// "Name <a@b>" form, so reject anything whose address isn't the whole input.
+	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+		return ErrInvalidEmail
 	}
 	return nil
 }
