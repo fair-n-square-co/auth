@@ -103,16 +103,11 @@ require (
 )
 
 require (
-	github.com/fair-n-square-co/apis/gen/pkg v0.0.0-00010101000000-000000000000
+	github.com/fair-n-square-co/apis/gen/pkg v0.2.0
 	golang.org/x/net v0.53.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 )
-
-// TODO(post-merge): apis publishes per-module gen/pkg tags. Once the authx
-// proto PR merges and gen/pkg is tagged, replace this local replace with a
-// pinned require (go get github.com/fair-n-square-co/apis/gen/pkg@vX.Y.Z).
-replace github.com/fair-n-square-co/apis/gen/pkg => ../apis/gen/pkg
 
 tool (
 	github.com/air-verse/air
