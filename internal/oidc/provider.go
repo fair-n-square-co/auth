@@ -1,9 +1,17 @@
 // Package oidc is the swappable-identity-source seam. The rest of the auth
-// service depends only on the provider-neutral IdentityClaims and the Provider
+// service depends only on the provider-neutral IdentityClaims and the Verifier
 // interface — never on WorkOS types directly — so the OIDC source (WorkOS today,
 // Clerk/Cognito/Better Auth tomorrow) can be replaced without a data migration
 // or changes above this package (ADR-4: "WorkOS treated as a swappable OIDC
 // source, no hard coupling").
+//
+// Zero trust (ADR-4 "Zero trust between services"): the external identity
+// (issuer + subject) is derived from the caller's verified access token via
+// Verifier, never from asserted request fields. Email — a non-identity profile
+// attribute, and PII we keep out of the token — is supplied separately (the BFF
+// passes it in the request body); it is not part of the trust-critical identity,
+// and the users_email_key unique constraint prevents linking an email already
+// tied to a different identity.
 package oidc
 
 import (
@@ -16,17 +24,45 @@ import (
 // is absent or empty.
 var ErrMissingClaim = errors.New("oidc: missing required claim")
 
-// IdentityClaims is the normalized, provider-neutral identity of an
-// authenticated principal. Issuer + Subject together uniquely identify the
-// external identity that links to our canonical user record.
-type IdentityClaims struct {
+// ErrInvalidToken is returned by a Verifier when the presented token is absent,
+// malformed, or (from FNS-95 on) fails signature/issuer/audience/expiry checks.
+var ErrInvalidToken = errors.New("oidc: invalid token")
+
+// TokenIdentity is what a Verifier extracts from an access token: the external
+// identity (issuer + subject) that links to our canonical user record. Email is
+// deliberately absent — it is not the identity key and is supplied by the caller
+// in the request body, not carried on the token.
+type TokenIdentity struct {
 	// Issuer is the OIDC `iss` (e.g. the WorkOS issuer URL). Stored alongside
 	// Subject so the same `sub` from two different providers never collide.
 	Issuer string
 	// Subject is the OIDC `sub` — the provider's stable user identifier.
 	Subject string
-	// Email is the user's email at the provider.
-	Email string
+}
+
+// IdentityClaims is the normalized, provider-neutral identity of an
+// authenticated principal, assembled from a verified TokenIdentity plus the
+// email supplied by the caller.
+type IdentityClaims struct {
+	Issuer  string
+	Subject string
+	Email   string
+}
+
+//go:generate go run go.uber.org/mock/mockgen -destination=mocks/oidc.go -package=mocks . Verifier
+
+// Verifier turns a raw access token into a trusted TokenIdentity.
+//
+// FNS-92 scope: the WorkOS implementation *decodes* the token without checking
+// its signature — the caller (the BFF) is on a trusted path — so the service
+// must be reachable only by trusted callers until FNS-95.
+//
+// TODO(FNS-95): the WorkOS implementation verifies the token signature against
+// the provider JWKS and checks iss/aud/exp before returning. This is a drop-in
+// behind this interface: no handler or wiring change, only the impl gets stricter.
+type Verifier interface {
+	// Verify returns the TokenIdentity carried by rawToken, or ErrInvalidToken.
+	Verify(ctx context.Context, rawToken string) (TokenIdentity, error)
 }
 
 // Normalized returns a copy with surrounding whitespace trimmed from every
@@ -55,22 +91,3 @@ func (c IdentityClaims) Validate() error {
 	}
 	return nil
 }
-
-// Provider turns provider-specific input into normalized IdentityClaims.
-//
-// FNS-92 scope: Normalize only — the BFF has already verified the token, so we
-// just map its claims into IdentityClaims.
-//
-// TODO(FNS-95): add `Verify(ctx, rawToken) (IdentityClaims, error)` that checks
-// the token signature against the provider JWKS before normalization. It slots
-// in *front* of the resolver without reshaping it.
-type Provider interface {
-	// Normalize maps already-verified provider claims into IdentityClaims and
-	// validates that the required fields (issuer, subject, email) are present.
-	Normalize(ctx context.Context, raw RawClaims) (IdentityClaims, error)
-}
-
-// RawClaims is the loosely-typed claim set handed to a Provider before
-// normalization. The concrete shape is provider-defined; this keeps the seam
-// from leaking provider-specific types upward.
-type RawClaims map[string]any

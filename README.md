@@ -4,11 +4,16 @@ Go service that owns the **canonical user record** and **JIT provisioning** (FNS
 is the authentication source; this service keeps the stable internal `users` record and treats the
 OIDC provider as swappable (ADR-4). Layout and conventions mirror the `core` service.
 
-It exposes a connectRPC `IdentityService.ResolveUser` RPC: given verified OIDC claims (issuer,
-subject, email) it returns the canonical user, JIT-provisioning one on first login and resolving the
-same internal id idempotently thereafter. Token *signature* verification (JWKS) is out of scope here
-and lands in FNS-95 — until then the service trusts claims already verified by the BFF and must be
-reachable only by trusted callers.
+It exposes a connectRPC `IdentityService.ResolveUser` RPC. The BFF calls it with the caller's WorkOS
+access token in the `Authorization: Bearer` metadata and the user's `email` in the request body. The
+service derives the identity key (`iss`/`sub`) from the token — **not** from the body (ADR-4 "Zero trust
+between services") — while `email`, a non-identity attribute kept off the token to avoid PII, is taken
+from the body. On first login it JIT-provisions the canonical user, resolving the same internal id
+idempotently thereafter.
+
+Token *signature* verification (JWKS) is out of scope here and lands in FNS-95: for now the service
+**decodes** the token without checking its signature, so it must be reachable only by trusted callers
+(network isolation / mTLS) until then.
 
 ## Layout
 

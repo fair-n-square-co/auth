@@ -5,10 +5,13 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,15 +27,30 @@ import (
 	authxpb "github.com/fair-n-square-co/apis/gen/pkg/fairnsquare/service/authx/v1alpha1"
 	"github.com/fair-n-square-co/apis/gen/pkg/fairnsquare/service/authx/v1alpha1/authxpbconnect"
 	authdb "github.com/fair-n-square-co/auth/internal/auth/db"
+	"github.com/fair-n-square-co/auth/internal/oidc/workos"
 )
 
 const migrationsDir = "../../db/auth/migrations"
 
+// mintToken builds a JWT-shaped access token carrying iss/sub. The signature is
+// bogus: FNS-92 decodes without verifying (JWKS verification is FNS-95).
+func mintToken(t *testing.T, issuer, subject string) string {
+	t.Helper()
+	enc := func(v any) string {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		return base64.RawURLEncoding.EncodeToString(b)
+	}
+	header := enc(map[string]any{"alg": "RS256", "typ": "JWT"})
+	payload := enc(map[string]any{"iss": issuer, "sub": subject})
+	return strings.Join([]string{header, payload, "sig"}, ".")
+}
+
 // TestResolveUser_RoundTrip is the acceptance test for FNS-92: ResolveUser is
 // callable over HTTP and JIT-provisions a canonical user on first login, then
-// resolves the same internal id idempotently on subsequent calls. It spins a
-// throwaway Postgres, applies the goose migrations, and calls through the same
-// mux the binary serves.
+// resolves the same internal id idempotently on subsequent calls. Identity is
+// carried by the access token (Authorization metadata); the email travels in the
+// request body.
 func TestResolveUser_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
@@ -66,27 +84,27 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
-	ts := httptest.NewServer(newMux(pool, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	const issuer = "https://example.workos.com"
+	mux := newMux(pool, slog.New(slog.NewTextHandler(io.Discard, nil)), workos.NewVerifier(issuer))
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
 	client := authxpbconnect.NewIdentityServiceClient(http.DefaultClient, ts.URL)
-	req := func() *connect.Request[authxpb.ResolveUserRequest] {
-		return connect.NewRequest(&authxpb.ResolveUserRequest{
-			Issuer:  "https://example.workos.com",
-			Subject: "user_01J0",
-			Email:   "alice@example.com",
-		})
+	call := func(subject, email string) (*connect.Response[authxpb.ResolveUserResponse], error) {
+		req := connect.NewRequest(&authxpb.ResolveUserRequest{Email: email})
+		req.Header().Set("Authorization", "Bearer "+mintToken(t, issuer, subject))
+		return client.ResolveUser(ctx, req)
 	}
 
 	// First login provisions the canonical user.
-	first, err := client.ResolveUser(ctx, req())
+	first, err := call("user_01J0", "alice@example.com")
 	require.NoError(t, err)
 	assert.True(t, first.Msg.GetCreated(), "first login should provision a new user")
 	require.NotEmpty(t, first.Msg.GetUser().GetId())
 	assert.Equal(t, "alice@example.com", first.Msg.GetUser().GetEmail())
 
 	// Second login resolves the same id and does not re-provision (idempotent).
-	second, err := client.ResolveUser(ctx, req())
+	second, err := call("user_01J0", "alice@example.com")
 	require.NoError(t, err)
 	assert.False(t, second.Msg.GetCreated(), "second login should not re-provision")
 	assert.Equal(t, first.Msg.GetUser().GetId(), second.Msg.GetUser().GetId())
@@ -94,30 +112,26 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 	// A different identity (new subject) reusing the same email must be rejected
 	// cleanly as AlreadyExists, not surface as a 500. This exercises the real
 	// constraint-name detection (users_email_key) against Postgres.
-	conflict, err := client.ResolveUser(ctx, connect.NewRequest(&authxpb.ResolveUserRequest{
-		Issuer:  "https://example.workos.com",
-		Subject: "user_DIFFERENT",
-		Email:   "alice@example.com",
-	}))
+	conflict, err := call("user_DIFFERENT", "alice@example.com")
 	require.Nil(t, conflict)
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeAlreadyExists, connect.CodeOf(err))
 }
 
-// TestResolveUser_InvalidClaims asserts missing claims map to InvalidArgument.
-func TestResolveUser_InvalidClaims(t *testing.T) {
+// TestResolveUser_MissingToken asserts a request without a bearer token is
+// rejected as Unauthenticated before any provisioning is attempted.
+func TestResolveUser_MissingToken(t *testing.T) {
 	ctx := context.Background()
-	ts := httptest.NewServer(newMux(nil, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mux := newMux(nil, logger, workos.NewVerifier(""))
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
 	client := authxpbconnect.NewIdentityServiceClient(http.DefaultClient, ts.URL)
-	_, err := client.ResolveUser(ctx, connect.NewRequest(&authxpb.ResolveUserRequest{
-		Issuer: "https://example.workos.com",
-		// subject + email omitted
-	}))
+	_, err := client.ResolveUser(ctx, connect.NewRequest(&authxpb.ResolveUserRequest{Email: "alice@example.com"}))
 
 	require.Error(t, err)
-	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
 
 func runMigrations(t *testing.T, dsn string) {

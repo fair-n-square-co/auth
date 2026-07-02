@@ -2,6 +2,9 @@ package workos_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,35 +14,64 @@ import (
 	"github.com/fair-n-square-co/auth/internal/oidc/workos"
 )
 
-func TestNormalize_MapsAndTrims(t *testing.T) {
-	p := workos.New()
-	got, err := p.Normalize(context.Background(), oidc.RawClaims{
-		"iss":   "  https://example.workos.com  ",
-		"sub":   "user_01J0",
-		"email": "alice@example.com",
-		"extra": "ignored",
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, oidc.IdentityClaims{
-		Issuer:  "https://example.workos.com",
-		Subject: "user_01J0",
-		Email:   "alice@example.com",
-	}, got)
+// mintToken builds a JWT-shaped string (header.payload.signature) carrying the
+// given claims. The signature is bogus on purpose: FNS-92 decodes without
+// verifying, so tests must not depend on a real signature.
+func mintToken(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	enc := func(v any) string {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		return base64.RawURLEncoding.EncodeToString(b)
+	}
+	header := enc(map[string]any{"alg": "RS256", "typ": "JWT"})
+	return strings.Join([]string{header, enc(claims), "not-a-real-signature"}, ".")
 }
 
-func TestNormalize_MissingOrWrongType(t *testing.T) {
-	cases := map[string]oidc.RawClaims{
-		"missing email":   {"iss": "i", "sub": "s"},
-		"empty subject":   {"iss": "i", "sub": "  ", "email": "e"},
-		"non-string sub":  {"iss": "i", "sub": 123, "email": "e"},
-		"empty raw claim": {},
+func TestVerify_DecodesIssuerAndSubject(t *testing.T) {
+	v := workos.NewVerifier("https://example.workos.com")
+	token := mintToken(t, map[string]any{
+		"iss":   "  https://example.workos.com  ",
+		"sub":   "user_01J0",
+		"email": "not-read-from-token@example.com", // access token email is ignored
+	})
+
+	ident, err := v.Verify(context.Background(), token)
+
+	require.NoError(t, err)
+	assert.Equal(t, oidc.TokenIdentity{
+		Issuer:  "https://example.workos.com",
+		Subject: "user_01J0",
+	}, ident)
+}
+
+func TestVerify_DoesNotCheckSignature(t *testing.T) {
+	// Documents the FNS-92 trust gap: a token with a garbage signature still
+	// decodes. FNS-95 makes this fail.
+	v := workos.NewVerifier("")
+	token := mintToken(t, map[string]any{"iss": "i", "sub": "s"})
+
+	ident, err := v.Verify(context.Background(), token)
+
+	require.NoError(t, err)
+	assert.Equal(t, "s", ident.Subject)
+}
+
+func TestVerify_Invalid(t *testing.T) {
+	v := workos.NewVerifier("")
+	cases := map[string]string{
+		"empty":            "",
+		"not a jwt":        "abc",
+		"two segments":     "aaa.bbb",
+		"bad base64":       "aaa.!!!not-base64!!!.ccc",
+		"missing subject":  mintToken(t, map[string]any{"iss": "i"}),
+		"blank subject":    mintToken(t, map[string]any{"iss": "i", "sub": "  "}),
+		"non-string subno": mintToken(t, map[string]any{"iss": "i", "sub": 123}),
 	}
-	for name, raw := range cases {
+	for name, token := range cases {
 		t.Run(name, func(t *testing.T) {
-			p := workos.New()
-			_, err := p.Normalize(context.Background(), raw)
-			require.ErrorIs(t, err, oidc.ErrMissingClaim)
+			_, err := v.Verify(context.Background(), token)
+			require.ErrorIs(t, err, oidc.ErrInvalidToken)
 		})
 	}
 }

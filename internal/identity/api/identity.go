@@ -6,6 +6,8 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 
@@ -17,6 +19,8 @@ import (
 )
 
 // IdentityService is the slice of the identity service the handler depends on.
+//
+//go:generate go run go.uber.org/mock/mockgen -destination=mocks/identity.go -package=mocks . IdentityService
 type IdentityService interface {
 	ResolveOrProvision(ctx context.Context, claims oidc.IdentityClaims) (service.User, bool, error)
 }
@@ -25,33 +29,54 @@ type IdentityService interface {
 // JIT entrypoint the BFF calls after a successful WorkOS login. Methods not yet
 // implemented fall through to UnimplementedIdentityServiceHandler.
 //
-// TRUST BOUNDARY: ResolveUser trusts the claims in the request as already
-// verified by the caller (the BFF). The service does NOT yet validate the token
-// signature itself — JWKS verification lands in FNS-95. Until then the service
-// must be reachable only by trusted callers (network isolation / mTLS), since
-// anyone who can call it could provision or resolve an arbitrary identity.
+// TRUST BOUNDARY (ADR-4 "Zero trust between services"): the external identity
+// — issuer + subject, the record's key — comes solely from the caller's WorkOS
+// access token, presented as an `Authorization: Bearer` header. The Verifier
+// yields that trusted identity; the caller cannot assert it. Email is a
+// non-identity profile attribute supplied in the request body (kept out of the
+// token to avoid PII); a caller can only attach an email to its own verified
+// identity, and the users_email_key constraint blocks reusing another's.
+//
+// FNS-92 gap: the Verifier currently *decodes* the token without checking its
+// signature — JWKS verification lands in FNS-95 — so until then the service must
+// be reachable only by trusted callers (network isolation / mTLS).
 type IdentityServer struct {
 	authxpbconnect.UnimplementedIdentityServiceHandler
-	svc IdentityService
+	svc      IdentityService
+	verifier oidc.Verifier
 }
 
-// NewIdentityServer constructs an IdentityServer backed by svc.
-func NewIdentityServer(svc IdentityService) *IdentityServer {
-	return &IdentityServer{svc: svc}
+// NewIdentityServer constructs an IdentityServer backed by svc, using verifier
+// to authenticate the caller's access token.
+func NewIdentityServer(svc IdentityService, verifier oidc.Verifier) *IdentityServer {
+	return &IdentityServer{svc: svc, verifier: verifier}
 }
 
 // ResolveUser resolves (and JIT-provisions on first login) the canonical user
-// for the verified identity claims supplied by the BFF, returning our stable
-// internal user id.
+// for the identity carried by the caller's WorkOS access token, returning our
+// stable internal user id.
 func (s *IdentityServer) ResolveUser(
 	ctx context.Context,
 	req *connect.Request[authxpb.ResolveUserRequest],
 ) (*connect.Response[authxpb.ResolveUserResponse], error) {
-	msg := req.Msg
+	token, err := bearerToken(req.Header())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	// Trusted identity from the token (signature check is TODO(FNS-95)).
+	ident, err := s.verifier.Verify(ctx, token)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	// Email is not on the access token (PII); the caller supplies it in the
+	// request body. It attaches only to the token-verified identity above, so an
+	// empty/blank email surfaces as ErrInvalidClaims from the service below.
 	claims := oidc.IdentityClaims{
-		Issuer:  msg.GetIssuer(),
-		Subject: msg.GetSubject(),
-		Email:   msg.GetEmail(),
+		Issuer:  ident.Issuer,
+		Subject: ident.Subject,
+		Email:   req.Msg.GetEmail(),
 	}
 
 	user, created, err := s.svc.ResolveOrProvision(ctx, claims)
@@ -69,12 +94,33 @@ func (s *IdentityServer) ResolveUser(
 	}
 
 	return connect.NewResponse(&authxpb.ResolveUserResponse{
-		// Return only the canonical id and normalized email; the caller already
-		// supplied issuer/subject, so we don't echo them back (see User proto).
+		// Return only the canonical id and normalized email; issuer/subject are
+		// the caller's own token claims, so we don't echo them back (see User proto).
 		User: &authxpb.User{
 			Id:    user.ID,
 			Email: user.Email,
 		},
 		Created: created,
 	}), nil
+}
+
+// errMissingBearer is returned when the Authorization header is absent or not a
+// non-empty Bearer token. It stays deliberately vague — the client only needs to
+// know it must present a valid token.
+var errMissingBearer = errors.New("missing or malformed bearer token")
+
+// bearerToken extracts the token from an `Authorization: Bearer <token>` header,
+// matching the scheme case-insensitively. It returns errMissingBearer when the
+// header is absent, uses another scheme, or carries an empty token.
+func bearerToken(h http.Header) (string, error) {
+	const scheme = "bearer "
+	authz := h.Get("Authorization")
+	if len(authz) < len(scheme) || !strings.EqualFold(authz[:len(scheme)], scheme) {
+		return "", errMissingBearer
+	}
+	token := strings.TrimSpace(authz[len(scheme):])
+	if token == "" {
+		return "", errMissingBearer
+	}
+	return token, nil
 }

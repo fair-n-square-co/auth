@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fair-n-square-co/auth/internal/auth/db"
+	"github.com/fair-n-square-co/auth/internal/oidc/workos"
 	"github.com/fair-n-square-co/auth/pkg/logger"
 	"github.com/spf13/viper"
 )
@@ -16,16 +17,13 @@ import (
 var configFiles embed.FS
 
 // Config is the fully-resolved application configuration. Sub-configs are
-// composed from the packages that own them (e.g. db.DBConfig) so each module
-// defines its own settings and they are populated here in one place.
-//
-// TODO(impl): add an OIDC sub-config (issuer, client id, JWKS URL) once the
-// WorkOS provider is wired in (see internal/oidc). For FNS-92 the resolver
-// trusts BFF-verified claims, so no OIDC settings are required yet.
+// composed from the packages that own them (e.g. db.DBConfig, workos.Config) so
+// each module defines its own settings and they are populated here in one place.
 type Config struct {
 	Port   int
 	Logger logger.LogConfig
 	Db     db.DBConfig
+	Workos workos.Config
 
 	viperReader *viper.Viper
 }

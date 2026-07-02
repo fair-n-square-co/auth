@@ -20,6 +20,8 @@ import (
 	"github.com/fair-n-square-co/auth/internal/identity/api"
 	"github.com/fair-n-square-co/auth/internal/identity/repository"
 	"github.com/fair-n-square-co/auth/internal/identity/service"
+	"github.com/fair-n-square-co/auth/internal/oidc"
+	"github.com/fair-n-square-co/auth/internal/oidc/workos"
 	"github.com/fair-n-square-co/auth/pkg/middleware"
 )
 
@@ -37,7 +39,11 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
-	srv := newHTTPServer(newMux(pool, logger))
+	// WorkOS seam: verifier authenticates the access token (decode-only until
+	// FNS-95 adds JWKS verification).
+	verifier := workos.NewVerifier(cfg.Workos.Issuer)
+
+	srv := newHTTPServer(newMux(pool, logger, verifier))
 
 	logger.Info("listening", "addr", addr)
 	return serve(ctx, srv, lis)
@@ -45,7 +51,9 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 
 // newMux builds the HTTP mux exposing the identity service, gRPC health, and
 // gRPC reflection, all wrapped with the shared logging/recovery interceptors.
-func newMux(pool *pgxpool.Pool, logger *slog.Logger) *http.ServeMux {
+// verifier is the OIDC seam the identity handler uses to authenticate the
+// caller's access token.
+func newMux(pool *pgxpool.Pool, logger *slog.Logger, verifier oidc.Verifier) *http.ServeMux {
 	// Order matters: the sanitizer is outermost so it has the final say on the
 	// client-facing error; logging runs inside it so it still records the full
 	// error; recovery is innermost, closest to the handler, to catch panics.
@@ -55,7 +63,7 @@ func newMux(pool *pgxpool.Pool, logger *slog.Logger) *http.ServeMux {
 		middleware.NewRecoveryInterceptor(logger),
 	)
 
-	identitySrv := api.NewIdentityServer(service.NewIdentityService(repository.New(pool)))
+	identitySrv := api.NewIdentityServer(service.NewIdentityService(repository.New(pool)), verifier)
 
 	mux := http.NewServeMux()
 	mux.Handle(authxpbconnect.NewIdentityServiceHandler(identitySrv, interceptors))

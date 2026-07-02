@@ -9,3 +9,7 @@ db:
   maxConnLifetime: 1h
   maxConnIdleTime: 30m
   healthCheckPeriod: 1m
+workos:
+  # Env-specific values come from AUTH_WORKOS_* env vars, not the YAML.
+  issuer: ""
+  clientID: ""
