@@ -63,7 +63,7 @@ func TestResolveUser_ProvisionsFromTokenAndBody(t *testing.T) {
 	resp, err := h.server.ResolveUser(context.Background(), request("access-token", "alice@example.com"))
 
 	require.NoError(t, err)
-	assert.True(t, resp.Msg.GetCreated())
+	assert.Equal(t, authxpb.ResolveUserResponse_RESOLUTION_CREATED, resp.Msg.GetResolution())
 	assert.Equal(t, "uuid-1", resp.Msg.GetUser().GetId())
 	assert.Equal(t, "alice@example.com", resp.Msg.GetUser().GetEmail())
 }

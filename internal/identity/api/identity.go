@@ -93,6 +93,11 @@ func (s *IdentityServer) ResolveUser(
 		}
 	}
 
+	resolution := authxpb.ResolveUserResponse_RESOLUTION_FOUND
+	if created {
+		resolution = authxpb.ResolveUserResponse_RESOLUTION_CREATED
+	}
+
 	return connect.NewResponse(&authxpb.ResolveUserResponse{
 		// Return only the canonical id and normalized email; issuer/subject are
 		// the caller's own token claims, so we don't echo them back (see User proto).
@@ -100,7 +105,7 @@ func (s *IdentityServer) ResolveUser(
 			Id:    user.ID,
 			Email: user.Email,
 		},
-		Created: created,
+		Resolution: resolution,
 	}), nil
 }
 

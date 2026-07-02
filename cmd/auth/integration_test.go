@@ -99,14 +99,14 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 	// First login provisions the canonical user.
 	first, err := call("user_01J0", "alice@example.com")
 	require.NoError(t, err)
-	assert.True(t, first.Msg.GetCreated(), "first login should provision a new user")
+	assert.Equal(t, authxpb.ResolveUserResponse_RESOLUTION_CREATED, first.Msg.GetResolution(), "first login should provision a new user")
 	require.NotEmpty(t, first.Msg.GetUser().GetId())
 	assert.Equal(t, "alice@example.com", first.Msg.GetUser().GetEmail())
 
 	// Second login resolves the same id and does not re-provision (idempotent).
 	second, err := call("user_01J0", "alice@example.com")
 	require.NoError(t, err)
-	assert.False(t, second.Msg.GetCreated(), "second login should not re-provision")
+	assert.Equal(t, authxpb.ResolveUserResponse_RESOLUTION_FOUND, second.Msg.GetResolution(), "second login should not re-provision")
 	assert.Equal(t, first.Msg.GetUser().GetId(), second.Msg.GetUser().GetId())
 
 	// A different identity (new subject) reusing the same email must be rejected
