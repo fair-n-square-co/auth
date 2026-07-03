@@ -105,19 +105,19 @@ func toUser(row sqlc.User) (User, error) {
 		return User{}, fmt.Errorf("decode user id: %w", err)
 	}
 	return User{
-		ID:      id,
+		ID:      id.String(),
 		Issuer:  row.OidcIssuer,
 		Subject: row.OidcSubject,
 		Email:   row.Email,
 	}, nil
 }
 
-// fromPgUUID renders a pgtype.UUID as its canonical string via google/uuid. It
-// errors rather than silently emitting "" so bad/NULL row data surfaces as a
-// repository error instead of an apparently valid user with a blank id.
-func fromPgUUID(u pgtype.UUID) (string, error) {
+// fromPgUUID converts a pgtype.UUID into a uuid.UUID. It errors rather than
+// silently returning the nil UUID so bad/NULL row data surfaces as a repository
+// error instead of an apparently valid user with a blank id.
+func fromPgUUID(u pgtype.UUID) (uuid.UUID, error) {
 	if !u.Valid {
-		return "", errors.New("uuid is NULL or invalid")
+		return uuid.Nil, errors.New("uuid is NULL or invalid")
 	}
-	return uuid.UUID(u.Bytes).String(), nil
+	return uuid.UUID(u.Bytes), nil
 }
