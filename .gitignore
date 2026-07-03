@@ -1,0 +1,12 @@
+# Binaries
+/bin/
+
+# Test & coverage output
+cover.out
+*.out
+
+# Local env
+.env
+
+# Air hot-reload tmp
+tmp/

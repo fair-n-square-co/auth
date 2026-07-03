@@ -1,0 +1,25 @@
+port: 8081
+tls:
+  # Paths come from AUTH_TLS_CERTFILE / AUTH_TLS_KEYFILE. Empty = serve cleartext
+  # HTTP/1.1 + h2c (local development).
+  certFile: ""
+  keyFile: ""
+http:
+  readHeaderTimeout: 10s
+  idleTimeout: 120s
+  shutdownTimeout: 10s
+logger:
+  level: 0
+  format: json
+db:
+  connString: ""
+  maxConns: 10
+  minConns: 2
+  maxConnLifetime: 1h
+  maxConnIdleTime: 30m
+  healthCheckPeriod: 1m
+  pingTimeout: 5s
+workos:
+  # Env-specific values come from AUTH_WORKOS_* env vars, not the YAML.
+  issuer: ""
+  clientID: ""

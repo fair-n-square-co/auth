@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:17
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-auth}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 1s
+      timeout: 30s
+      retries: 3
+
+  # One-shot: applies migrations, then exits. Mirrors the two-step CD flow.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    command: ["up"]
+    environment:
+      # Derive the DSN from the same POSTGRES_* vars the db service uses so the
+      # stack can't migrate one database while serving another. Host is the db
+      # service name on the compose network.
+      GOOSE_DBSTRING: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-auth}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    ports:
+      - "8081:8081"
+    environment:
+      # Same single source of truth as the db and migrate services (see above).
+      AUTH_DB_CONNSTRING: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-auth}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db_data:
