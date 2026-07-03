@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fair-n-square-co/auth/internal/auth/db"
 	"github.com/fair-n-square-co/auth/internal/oidc/workos"
@@ -22,11 +23,21 @@ var configFiles embed.FS
 type Config struct {
 	Port   int
 	TLS    TLSConfig
+	HTTP   HTTPConfig
 	Logger logger.LogConfig
 	Db     db.DBConfig
 	Workos workos.Config
 
 	viperReader *viper.Viper
+}
+
+// HTTPConfig holds the server's connection timeouts. ReadHeaderTimeout bounds
+// how long the server waits for request headers; IdleTimeout bounds idle
+// keep-alive connections between requests. ReadTimeout/WriteTimeout are omitted
+// so long-lived streaming RPCs are not cut off.
+type HTTPConfig struct {
+	ReadHeaderTimeout time.Duration
+	IdleTimeout       time.Duration
 }
 
 // TLSConfig configures optional TLS termination for the server. When both

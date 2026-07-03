@@ -4,6 +4,9 @@ tls:
   # HTTP/1.1 + h2c (local development).
   certFile: ""
   keyFile: ""
+http:
+  readHeaderTimeout: 10s
+  idleTimeout: 120s
 logger:
   level: 0
   format: json

@@ -43,7 +43,7 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 	// the token without verifying its signature (TODO: add JWKS verification).
 	verifier := workos.NewVerifier(cfg.Workos.Issuer)
 
-	srv := newHTTPServer(newMux(pool, logger, verifier), cfg.TLS)
+	srv := newHTTPServer(newMux(pool, logger, verifier), cfg.HTTP, cfg.TLS)
 
 	scheme := "http"
 	if cfg.TLS.Enabled() {
@@ -92,10 +92,11 @@ func newMux(pool *pgxpool.Pool, logger *slog.Logger, verifier oidc.Verifier) *ht
 // connect and grpc-web clients already work over plain HTTP/1.1. This uses the
 // stdlib http.Protocols knobs (Go 1.24+), so no golang.org/x/net/http2/h2c
 // wrapper is needed.
-func newHTTPServer(handler http.Handler, tlsCfg config.TLSConfig) *http.Server {
+func newHTTPServer(handler http.Handler, httpCfg config.HTTPConfig, tlsCfg config.TLSConfig) *http.Server {
 	srv := &http.Server{
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: httpCfg.ReadHeaderTimeout,
+		IdleTimeout:       httpCfg.IdleTimeout,
 	}
 	if !tlsCfg.Enabled() {
 		protocols := new(http.Protocols)
