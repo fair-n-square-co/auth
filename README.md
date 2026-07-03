@@ -1,7 +1,7 @@
 # auth — Fair N Square Auth (Authx) Service
 
-Go service that owns the **canonical user record** and **JIT provisioning** (FNS-92). WorkOS AuthKit
-is the authentication source; this service keeps the stable internal `users` record and treats the
+Go service that owns the **canonical user record** and **JIT provisioning**. WorkOS AuthKit
+is the authentication source; this service keeps the stable internal `user` record and treats the
 OIDC provider as swappable (ADR-4). Layout and conventions mirror the `core` service.
 
 It exposes a connectRPC `IdentityService.ResolveUser` RPC. The BFF calls it with the caller's WorkOS
@@ -11,7 +11,7 @@ between services") — while `email`, a non-identity attribute kept off the toke
 from the body. On first login it JIT-provisions the canonical user, resolving the same internal id
 idempotently thereafter.
 
-Token *signature* verification (JWKS) is out of scope here and lands in FNS-95: for now the service
+Token *signature* verification (JWKS) is out of scope here and is a follow-up: for now the service
 **decodes** the token without checking its signature, so it must be reachable only by trusted callers
 (network isolation / mTLS) until then.
 
@@ -19,7 +19,7 @@ Token *signature* verification (JWKS) is out of scope here and lands in FNS-95: 
 
 ```text
 cmd/auth/            entrypoint + config (embedded YAML + AUTH_-prefixed env via viper)
-db/auth/             goose migrations + sqlc queries (users)
+db/auth/             goose migrations + sqlc queries (user)
 internal/
   auth/db/           pgx pool + generated sqlc (do not hand-edit sqlc/)
   identity/          domain module: api -> service -> repository

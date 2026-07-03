@@ -39,14 +39,18 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
-	// WorkOS seam: verifier authenticates the access token (decode-only until
-	// FNS-95 adds JWKS verification).
+	// WorkOS seam: verifier authenticates the access token. It currently decodes
+	// the token without verifying its signature (TODO: add JWKS verification).
 	verifier := workos.NewVerifier(cfg.Workos.Issuer)
 
-	srv := newHTTPServer(newMux(pool, logger, verifier))
+	srv := newHTTPServer(newMux(pool, logger, verifier), cfg.TLS)
 
-	logger.Info("listening", "addr", addr)
-	return serve(ctx, srv, lis)
+	scheme := "http"
+	if cfg.TLS.Enabled() {
+		scheme = "https"
+	}
+	logger.Info("listening", "addr", addr, "scheme", scheme)
+	return serve(ctx, srv, lis, cfg.TLS)
 }
 
 // newMux builds the HTTP mux exposing the identity service, gRPC health, and
@@ -78,26 +82,43 @@ func newMux(pool *pgxpool.Pool, logger *slog.Logger, verifier oidc.Verifier) *ht
 	return mux
 }
 
-// newHTTPServer builds an HTTP server that also speaks unencrypted (cleartext)
-// HTTP/2, so gRPC clients can connect without TLS (local development only).
-func newHTTPServer(handler http.Handler) *http.Server {
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetUnencryptedHTTP2(true)
-
-	return &http.Server{
+// newHTTPServer builds the HTTP server for handler.
+//
+// With TLS configured it serves HTTPS and HTTP/2 is negotiated via ALPN — the
+// standard way to serve the gRPC protocol over the network, no extra setup.
+//
+// Without TLS (local development) it enables cleartext HTTP/2 (h2c) so
+// gRPC-protocol clients — health probes, grpcurl reflection — can still connect;
+// connect and grpc-web clients already work over plain HTTP/1.1. This uses the
+// stdlib http.Protocols knobs (Go 1.24+), so no golang.org/x/net/http2/h2c
+// wrapper is needed.
+func newHTTPServer(handler http.Handler, tlsCfg config.TLSConfig) *http.Server {
+	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		Protocols:         protocols,
 	}
+	if !tlsCfg.Enabled() {
+		protocols := new(http.Protocols)
+		protocols.SetHTTP1(true)
+		protocols.SetUnencryptedHTTP2(true)
+		srv.Protocols = protocols
+	}
+	return srv
 }
 
-// serve runs srv on lis and shuts it down gracefully when ctx is cancelled.
-func serve(ctx context.Context, srv *http.Server, lis net.Listener) error {
+// serve runs srv on lis — over TLS when configured — and shuts it down
+// gracefully when ctx is cancelled.
+func serve(ctx context.Context, srv *http.Server, lis net.Listener, tlsCfg config.TLSConfig) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		if err := srv.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if tlsCfg.Enabled() {
+			err = srv.ServeTLS(lis, tlsCfg.CertFile, tlsCfg.KeyFile)
+		} else {
+			err = srv.Serve(lis)
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil

@@ -15,8 +15,8 @@ import (
 )
 
 // mintToken builds a JWT-shaped string (header.payload.signature) carrying the
-// given claims. The signature is bogus on purpose: FNS-92 decodes without
-// verifying, so tests must not depend on a real signature.
+// given claims. The signature is bogus on purpose: the verifier decodes without
+// checking it, so tests must not depend on a real signature.
 func mintToken(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	enc := func(v any) string {
@@ -46,8 +46,8 @@ func TestVerify_DecodesIssuerAndSubject(t *testing.T) {
 }
 
 func TestVerify_DoesNotCheckSignature(t *testing.T) {
-	// Documents the FNS-92 trust gap: a token with a garbage signature still
-	// decodes. FNS-95 makes this fail.
+	// Documents the current trust gap: a token with a garbage signature still
+	// decodes. Signature verification will make this fail.
 	v := workos.NewVerifier("")
 	token := mintToken(t, map[string]any{"iss": "i", "sub": "s"})
 

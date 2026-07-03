@@ -6,7 +6,8 @@
 -- +goose StatementBegin
 CREATE EXTENSION IF NOT EXISTS citext;
 
-CREATE TABLE users (
+-- "user" is a reserved word in SQL, so the table name is always quoted.
+CREATE TABLE "user" (
   id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(), -- stable internal id
   oidc_issuer  text        NOT NULL,                              -- OIDC `iss` (provider-agnostic)
   oidc_subject text        NOT NULL,                              -- OIDC `sub`
@@ -15,12 +16,12 @@ CREATE TABLE users (
 
   -- Constraints are named so the repository can tell which one a unique
   -- violation hit (the identity race vs. an email already linked elsewhere).
-  CONSTRAINT users_identity_key UNIQUE (oidc_issuer, oidc_subject),
-  CONSTRAINT users_email_key UNIQUE (email)
+  CONSTRAINT user_identity_key UNIQUE (oidc_issuer, oidc_subject),
+  CONSTRAINT user_email_key UNIQUE (email)
 );
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS "user";
 -- +goose StatementEnd

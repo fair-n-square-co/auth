@@ -72,7 +72,7 @@ func Classify(err error) error {
 }
 
 // ConstraintName returns the Postgres constraint name attached to err (e.g.
-// "users_email_key"), or "" if err carries no PgError. Use it after Classify
+// "user_email_key"), or "" if err carries no PgError. Use it after Classify
 // reports a unique or foreign-key violation to pick a specific domain error.
 func ConstraintName(err error) string {
 	var pgErr *pgconn.PgError

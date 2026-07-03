@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/fair-n-square-co/auth/internal/auth/db/sqlc"
@@ -32,8 +33,8 @@ var ErrEmailTaken = errors.New("email already linked to another identity")
 // to a distinct domain error so the service can tell an identity collision apart
 // from an email already linked to a different identity.
 const (
-	constraintIdentity = "users_identity_key"
-	constraintEmail    = "users_email_key"
+	constraintIdentity = "user_identity_key"
+	constraintEmail    = "user_email_key"
 )
 
 // User is the repository-level view of a users row. Identifiers are canonical
@@ -111,17 +112,12 @@ func toUser(row sqlc.User) (User, error) {
 	}, nil
 }
 
-// fromPgUUID renders a pgtype.UUID as its canonical string. It errors rather
-// than silently emitting "" so bad/NULL row data surfaces as a repository error
-// instead of an apparently valid user with a blank id.
+// fromPgUUID renders a pgtype.UUID as its canonical string via google/uuid. It
+// errors rather than silently emitting "" so bad/NULL row data surfaces as a
+// repository error instead of an apparently valid user with a blank id.
 func fromPgUUID(u pgtype.UUID) (string, error) {
-	v, err := u.Value()
-	if err != nil {
-		return "", err
+	if !u.Valid {
+		return "", errors.New("uuid is NULL or invalid")
 	}
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("unexpected uuid value %T (NULL or invalid)", v)
-	}
-	return s, nil
+	return uuid.UUID(u.Bytes).String(), nil
 }

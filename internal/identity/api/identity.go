@@ -37,9 +37,10 @@ type IdentityService interface {
 // token to avoid PII); a caller can only attach an email to its own verified
 // identity, and the users_email_key constraint blocks reusing another's.
 //
-// FNS-92 gap: the Verifier currently *decodes* the token without checking its
-// signature — JWKS verification lands in FNS-95 — so until then the service must
-// be reachable only by trusted callers (network isolation / mTLS).
+// Current gap: the Verifier only *decodes* the token without checking its
+// signature, so until signature verification lands the service must be reachable
+// only by trusted callers (network isolation / mTLS).
+// TODO: verify the token signature (JWKS) before trusting the identity.
 type IdentityServer struct {
 	authxpbconnect.UnimplementedIdentityServiceHandler
 	svc      IdentityService
@@ -64,7 +65,7 @@ func (s *IdentityServer) ResolveUser(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	// Trusted identity from the token (signature check is TODO(FNS-95)).
+	// Trusted identity from the token (TODO: the signature is not yet verified).
 	ident, err := s.verifier.Verify(ctx, token)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)

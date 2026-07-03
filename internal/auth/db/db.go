@@ -8,8 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const pingTimeout = 5 * time.Second
-
 // DBConfig holds database connection settings. It is composed into the
 // application config and passed to NewPool after loading.
 //
@@ -30,6 +28,8 @@ type DBConfig struct {
 	MaxConnIdleTime time.Duration
 	// HealthCheckPeriod is how often the pool checks the health of idle connections.
 	HealthCheckPeriod time.Duration
+	// PingTimeout bounds the connectivity check NewPool runs after opening the pool.
+	PingTimeout time.Duration
 }
 
 // NewPool opens a pgx connection pool from c and verifies connectivity with a
@@ -52,7 +52,7 @@ func NewPool(ctx context.Context, c DBConfig) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create db pool: %w", err)
 	}
-	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, c.PingTimeout)
 	defer cancel()
 	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()

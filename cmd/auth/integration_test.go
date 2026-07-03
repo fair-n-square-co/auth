@@ -33,7 +33,7 @@ import (
 const migrationsDir = "../../db/auth/migrations"
 
 // mintToken builds a JWT-shaped access token carrying iss/sub. The signature is
-// bogus: FNS-92 decodes without verifying (JWKS verification is FNS-95).
+// bogus: the service decodes without verifying (JWKS verification is a follow-up).
 func mintToken(t *testing.T, issuer, subject string) string {
 	t.Helper()
 	enc := func(v any) string {
@@ -46,8 +46,8 @@ func mintToken(t *testing.T, issuer, subject string) string {
 	return strings.Join([]string{header, payload, "sig"}, ".")
 }
 
-// TestResolveUser_RoundTrip is the acceptance test for FNS-92: ResolveUser is
-// callable over HTTP and JIT-provisions a canonical user on first login, then
+// TestResolveUser_RoundTrip is the acceptance test: ResolveUser is callable over
+// HTTP and JIT-provisions a canonical user on first login, then
 // resolves the same internal id idempotently on subsequent calls. Identity is
 // carried by the access token (Authorization metadata); the email travels in the
 // request body.
@@ -80,6 +80,7 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 		MaxConnLifetime:   time.Hour,
 		MaxConnIdleTime:   30 * time.Minute,
 		HealthCheckPeriod: time.Minute,
+		PingTimeout:       5 * time.Second,
 	})
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)

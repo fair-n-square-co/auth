@@ -17,7 +17,7 @@ var ErrInvalidClaims = errors.New("invalid identity claims")
 
 // ErrEmailAlreadyLinked is returned when the email belongs to a different OIDC
 // identity than the one being resolved. We do not auto-relink (out of scope for
-// FNS-92), so this is a clean conflict the api layer maps to AlreadyExists.
+// now), so this is a clean conflict the api layer maps to AlreadyExists.
 var ErrEmailAlreadyLinked = errors.New("email already linked to another identity")
 
 // User is the service-level view of the canonical user record: our stable

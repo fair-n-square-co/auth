@@ -21,11 +21,26 @@ var configFiles embed.FS
 // each module defines its own settings and they are populated here in one place.
 type Config struct {
 	Port   int
+	TLS    TLSConfig
 	Logger logger.LogConfig
 	Db     db.DBConfig
 	Workos workos.Config
 
 	viperReader *viper.Viper
+}
+
+// TLSConfig configures optional TLS termination for the server. When both
+// CertFile and KeyFile are set the server serves HTTPS and negotiates HTTP/2 via
+// ALPN; otherwise it serves cleartext HTTP/1.1 + h2c for local development. The
+// cert/key paths come from the AUTH_TLS_* env vars, not the checked-in YAML.
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
+}
+
+// Enabled reports whether TLS is configured (both a cert and a key are set).
+func (t TLSConfig) Enabled() bool {
+	return t.CertFile != "" && t.KeyFile != ""
 }
 
 // LoadConfig resolves config in two passes into the same struct: embedded YAML

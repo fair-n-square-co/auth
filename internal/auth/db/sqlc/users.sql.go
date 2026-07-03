@@ -11,7 +11,7 @@ import (
 
 const createUser = `-- name: CreateUser :one
 
-INSERT INTO users (oidc_issuer, oidc_subject, email)
+INSERT INTO "user" (oidc_issuer, oidc_subject, email)
 VALUES ($1, $2, $3)
 RETURNING id, oidc_issuer, oidc_subject, email, created_at
 `
@@ -39,7 +39,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUserByIssuerSubject = `-- name: GetUserByIssuerSubject :one
-SELECT id, oidc_issuer, oidc_subject, email, created_at FROM users
+SELECT id, oidc_issuer, oidc_subject, email, created_at FROM "user"
 WHERE oidc_issuer = $1 AND oidc_subject = $2
 `
 

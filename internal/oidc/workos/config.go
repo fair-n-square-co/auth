@@ -7,9 +7,10 @@ package workos
 // Env var names (viper uses "_" as the key delimiter, so field names must not
 // themselves contain a segment break): AUTH_WORKOS_ISSUER, AUTH_WORKOS_CLIENTID.
 type Config struct {
-	// Issuer is the expected WorkOS OIDC issuer. Used from FNS-95 on to validate
-	// the token `iss` and locate the JWKS.
+	// Issuer is the expected WorkOS OIDC issuer. Used to validate the token `iss`
+	// and locate the JWKS once signature verification lands.
 	Issuer string
-	// ClientID is the WorkOS client id. Reserved for FNS-95 (audience / JWKS URL).
+	// ClientID is the WorkOS client id. Reserved for signature verification
+	// (audience / JWKS URL).
 	ClientID string
 }

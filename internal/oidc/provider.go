@@ -30,7 +30,8 @@ var ErrMissingClaim = errors.New("oidc: missing required claim")
 var ErrInvalidEmail = errors.New("oidc: invalid email")
 
 // ErrInvalidToken is returned by a Verifier when the presented token is absent,
-// malformed, or (from FNS-95 on) fails signature/issuer/audience/expiry checks.
+// malformed, or (once signature verification lands) fails
+// signature/issuer/audience/expiry checks.
 var ErrInvalidToken = errors.New("oidc: invalid token")
 
 // TokenIdentity is what a Verifier extracts from an access token: the external
@@ -58,13 +59,13 @@ type IdentityClaims struct {
 
 // Verifier turns a raw access token into a trusted TokenIdentity.
 //
-// FNS-92 scope: the WorkOS implementation *decodes* the token without checking
+// Current scope: the WorkOS implementation *decodes* the token without checking
 // its signature — the caller (the BFF) is on a trusted path — so the service
-// must be reachable only by trusted callers until FNS-95.
+// must be reachable only by trusted callers for now.
 //
-// TODO(FNS-95): the WorkOS implementation verifies the token signature against
-// the provider JWKS and checks iss/aud/exp before returning. This is a drop-in
-// behind this interface: no handler or wiring change, only the impl gets stricter.
+// TODO: verify the token signature against the provider JWKS and check
+// iss/aud/exp before returning. This is a drop-in behind this interface: no
+// handler or wiring change, only the impl gets stricter.
 type Verifier interface {
 	// Verify returns the TokenIdentity carried by rawToken, or ErrInvalidToken.
 	Verify(ctx context.Context, rawToken string) (TokenIdentity, error)

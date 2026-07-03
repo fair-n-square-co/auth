@@ -3,10 +3,10 @@
 -- (CreateUser :one, GetUserBy... :one).
 
 -- name: CreateUser :one
-INSERT INTO users (oidc_issuer, oidc_subject, email)
+INSERT INTO "user" (oidc_issuer, oidc_subject, email)
 VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetUserByIssuerSubject :one
-SELECT * FROM users
+SELECT * FROM "user"
 WHERE oidc_issuer = $1 AND oidc_subject = $2;

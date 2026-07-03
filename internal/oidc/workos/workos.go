@@ -1,5 +1,5 @@
 // Package workos is the WorkOS AuthKit implementation of the oidc seam. It is
-// the only package that knows WorkOS specifics (claim names, and from FNS-95 the
+// the only package that knows WorkOS specifics (claim names, and eventually the
 // JWKS URL); everything above the seam consumes the provider-neutral
 // oidc.Verifier.
 package workos
@@ -22,12 +22,12 @@ const (
 
 // Verifier extracts the identity carried by a WorkOS access token.
 //
-// FNS-92: this decodes the JWT payload WITHOUT verifying the signature — the
-// token is trusted because the caller (the BFF) is on a trusted path. The
-// service must therefore be reachable only by trusted callers until FNS-95.
+// Current behavior: this decodes the JWT payload WITHOUT verifying the signature
+// — the token is trusted because the caller (the BFF) is on a trusted path. The
+// service must therefore be reachable only by trusted callers for now.
 //
-// TODO(FNS-95): verify the signature against the WorkOS JWKS and check
-// iss/aud/exp before returning. Sketch:
+// TODO: verify the signature against the WorkOS JWKS and check iss/aud/exp
+// before returning. Sketch:
 //   - fetch + cache the JWKS from cfg.Workos.Issuer's well-known metadata
 //     (`<issuer>/.well-known/jwks.json`), keyed by the token header `kid`;
 //   - parse with a JWKS-backed keyfunc (e.g. github.com/golang-jwt/jwt/v5 +
@@ -38,20 +38,21 @@ const (
 //
 // The interface and every caller stay unchanged; only this method gets stricter.
 type Verifier struct {
-	// issuer is the expected WorkOS issuer. Unused in FNS-92 (decode only);
-	// enforced once signature verification lands (FNS-95).
+	// issuer is the expected WorkOS issuer. Unused while we only decode;
+	// enforced once signature verification lands.
 	issuer string
 }
 
 // NewVerifier constructs a WorkOS Verifier. issuer is the expected OIDC issuer,
-// used from FNS-95 on to validate the token's `iss` and locate the JWKS.
+// used to validate the token's `iss` and locate the JWKS once signature
+// verification lands.
 func NewVerifier(issuer string) *Verifier {
 	return &Verifier{issuer: issuer}
 }
 
 // Verify decodes the WorkOS access token and returns its issuer and subject.
-// FNS-92: signature is NOT checked (see the type doc). Returns
-// oidc.ErrInvalidToken when the token is absent, malformed, or missing a subject.
+// The signature is NOT checked (see the type doc). Returns oidc.ErrInvalidToken
+// when the token is absent, malformed, or missing a subject.
 func (v *Verifier) Verify(_ context.Context, rawToken string) (oidc.TokenIdentity, error) {
 	claims, err := decodeClaims(rawToken)
 	if err != nil {
@@ -69,7 +70,8 @@ func (v *Verifier) Verify(_ context.Context, rawToken string) (oidc.TokenIdentit
 }
 
 // decodeClaims base64url-decodes and JSON-parses a JWT's payload segment without
-// any signature check. Replaced by a verifying parse in FNS-95.
+// any signature check. To be replaced by a verifying parse once signature
+// verification lands.
 func decodeClaims(rawToken string) (map[string]any, error) {
 	parts := strings.Split(strings.TrimSpace(rawToken), ".")
 	if len(parts) != 3 {
