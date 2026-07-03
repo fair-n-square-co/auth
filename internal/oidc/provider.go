@@ -10,7 +10,7 @@
 // Verifier, never from asserted request fields. Email — a non-identity profile
 // attribute, and PII we keep out of the token — is supplied separately (the BFF
 // passes it in the request body); it is not part of the trust-critical identity,
-// and the users_email_key unique constraint prevents linking an email already
+// and the user_email_key unique constraint prevents linking an email already
 // tied to a different identity.
 package oidc
 

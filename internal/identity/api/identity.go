@@ -35,7 +35,7 @@ type IdentityService interface {
 // yields that trusted identity; the caller cannot assert it. Email is a
 // non-identity profile attribute supplied in the request body (kept out of the
 // token to avoid PII); a caller can only attach an email to its own verified
-// identity, and the users_email_key constraint blocks reusing another's.
+// identity, and the user_email_key constraint blocks reusing another's.
 //
 // Current gap: the Verifier only *decodes* the token without checking its
 // signature, so until signature verification lands the service must be reachable

@@ -57,8 +57,9 @@ func NewLoggingInterceptor(logger *slog.Logger) connect.UnaryInterceptorFunc {
 				"duration_ms", time.Since(start).Milliseconds(),
 			}
 			if err != nil {
-				attrs = append(attrs, "code", connect.CodeOf(err).String(), "error", err.Error())
-				logger.LogAttrs(ctx, slog.LevelError, "rpc failed", asAttrs(attrs)...)
+				code := connect.CodeOf(err)
+				attrs = append(attrs, "code", code.String(), "error", err.Error())
+				logger.LogAttrs(ctx, levelForCode(code), "rpc failed", asAttrs(attrs)...)
 				return resp, err
 			}
 			logger.LogAttrs(ctx, slog.LevelInfo, "rpc handled", asAttrs(attrs)...)
@@ -84,6 +85,20 @@ func NewRecoveryInterceptor(logger *slog.Logger) connect.UnaryInterceptorFunc {
 			}()
 			return next(ctx, req)
 		}
+	}
+}
+
+// levelForCode picks the log level for a failed RPC by fault ownership: the
+// server-fault codes (the same Internal/Unknown/DataLoss the error sanitizer
+// treats as our fault) log at Error, while client faults — InvalidArgument,
+// Unauthenticated, AlreadyExists, and the rest — log at Warn so a misbehaving
+// caller can't flood the error stream or inflate the server's error rate.
+func levelForCode(code connect.Code) slog.Level {
+	switch code {
+	case connect.CodeInternal, connect.CodeUnknown, connect.CodeDataLoss:
+		return slog.LevelError
+	default:
+		return slog.LevelWarn
 	}
 }
 

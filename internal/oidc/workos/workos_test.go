@@ -67,6 +67,8 @@ func TestVerify_Invalid(t *testing.T) {
 		"missing subject":  mintToken(t, map[string]any{"iss": "i"}),
 		"blank subject":    mintToken(t, map[string]any{"iss": "i", "sub": "  "}),
 		"non-string subno": mintToken(t, map[string]any{"iss": "i", "sub": 123}),
+		"missing issuer":   mintToken(t, map[string]any{"sub": "s"}),
+		"blank issuer":     mintToken(t, map[string]any{"iss": "  ", "sub": "s"}),
 	}
 	for name, token := range cases {
 		t.Run(name, func(t *testing.T) {

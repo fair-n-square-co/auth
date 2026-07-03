@@ -112,7 +112,7 @@ func TestResolveUser_RoundTrip(t *testing.T) {
 
 	// A different identity (new subject) reusing the same email must be rejected
 	// cleanly as AlreadyExists, not surface as a 500. This exercises the real
-	// constraint-name detection (users_email_key) against Postgres.
+	// constraint-name detection (user_email_key) against Postgres.
 	conflict, err := call("user_DIFFERENT", "alice@example.com")
 	require.Nil(t, conflict)
 	require.Error(t, err)
