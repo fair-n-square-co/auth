@@ -25,9 +25,6 @@ import (
 	"github.com/fair-n-square-co/auth/pkg/middleware"
 )
 
-// shutdownTimeout bounds how long graceful shutdown waits for in-flight RPCs.
-const shutdownTimeout = 10 * time.Second
-
 // server serves the connect/gRPC API on the configured port using the given
 // connection pool until ctx is cancelled. The pool is owned by the caller.
 func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
@@ -50,7 +47,7 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 		scheme = "https"
 	}
 	logger.Info("listening", "addr", addr, "scheme", scheme)
-	return serve(ctx, srv, lis, cfg.TLS)
+	return serve(ctx, srv, lis, cfg.TLS, cfg.HTTP.ShutdownTimeout)
 }
 
 // newMux builds the HTTP mux exposing the identity service, gRPC health, and
@@ -109,7 +106,7 @@ func newHTTPServer(handler http.Handler, httpCfg config.HTTPConfig, tlsCfg confi
 
 // serve runs srv on lis — over TLS when configured — and shuts it down
 // gracefully when ctx is cancelled.
-func serve(ctx context.Context, srv *http.Server, lis net.Listener, tlsCfg config.TLSConfig) error {
+func serve(ctx context.Context, srv *http.Server, lis net.Listener, tlsCfg config.TLSConfig, shutdownTimeout time.Duration) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {

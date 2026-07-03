@@ -7,6 +7,7 @@ tls:
 http:
   readHeaderTimeout: 10s
   idleTimeout: 120s
+  shutdownTimeout: 10s
 logger:
   level: 0
   format: json

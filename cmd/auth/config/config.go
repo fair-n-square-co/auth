@@ -33,11 +33,13 @@ type Config struct {
 
 // HTTPConfig holds the server's connection timeouts. ReadHeaderTimeout bounds
 // how long the server waits for request headers; IdleTimeout bounds idle
-// keep-alive connections between requests. ReadTimeout/WriteTimeout are omitted
-// so long-lived streaming RPCs are not cut off.
+// keep-alive connections between requests; ShutdownTimeout bounds how long
+// graceful shutdown waits for in-flight RPCs to finish. ReadTimeout/WriteTimeout
+// are omitted so long-lived streaming RPCs are not cut off.
 type HTTPConfig struct {
 	ReadHeaderTimeout time.Duration
 	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
 }
 
 // TLSConfig configures optional TLS termination for the server. When both
