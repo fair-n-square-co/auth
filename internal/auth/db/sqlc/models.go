@@ -9,9 +9,15 @@ import (
 )
 
 type User struct {
-	ID          pgtype.UUID
-	OidcIssuer  string
-	OidcSubject string
-	Email       string
-	CreatedAt   pgtype.Timestamptz
+	ID                pgtype.UUID
+	OidcIssuer        string
+	OidcSubject       string
+	Email             string
+	CreatedAt         pgtype.Timestamptz
+	Username          pgtype.Text
+	DisplayName       pgtype.Text
+	PreferredCurrency pgtype.Text
+	Locale            pgtype.Text
+	Timezone          pgtype.Text
+	UpdatedAt         pgtype.Timestamptz
 }

@@ -7,13 +7,15 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 
 INSERT INTO "user" (oidc_issuer, oidc_subject, email)
 VALUES ($1, $2, $3)
-RETURNING id, oidc_issuer, oidc_subject, email, created_at
+RETURNING id, oidc_issuer, oidc_subject, email, created_at, username, display_name, preferred_currency, locale, timezone, updated_at
 `
 
 type CreateUserParams struct {
@@ -34,12 +36,18 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.OidcSubject,
 		&i.Email,
 		&i.CreatedAt,
+		&i.Username,
+		&i.DisplayName,
+		&i.PreferredCurrency,
+		&i.Locale,
+		&i.Timezone,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getUserByIssuerSubject = `-- name: GetUserByIssuerSubject :one
-SELECT id, oidc_issuer, oidc_subject, email, created_at FROM "user"
+SELECT id, oidc_issuer, oidc_subject, email, created_at, username, display_name, preferred_currency, locale, timezone, updated_at FROM "user"
 WHERE oidc_issuer = $1 AND oidc_subject = $2
 `
 
@@ -57,6 +65,67 @@ func (q *Queries) GetUserByIssuerSubject(ctx context.Context, arg GetUserByIssue
 		&i.OidcSubject,
 		&i.Email,
 		&i.CreatedAt,
+		&i.Username,
+		&i.DisplayName,
+		&i.PreferredCurrency,
+		&i.Locale,
+		&i.Timezone,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE "user"
+SET username           = $3,
+    display_name       = $4,
+    email              = $5,
+    preferred_currency = $6,
+    locale             = $7,
+    timezone           = $8,
+    updated_at         = now()
+WHERE oidc_issuer = $1 AND oidc_subject = $2
+RETURNING id, oidc_issuer, oidc_subject, email, created_at, username, display_name, preferred_currency, locale, timezone, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	OidcIssuer        string
+	OidcSubject       string
+	Username          pgtype.Text
+	DisplayName       pgtype.Text
+	Email             string
+	PreferredCurrency pgtype.Text
+	Locale            pgtype.Text
+	Timezone          pgtype.Text
+}
+
+// Full-replace of the caller's mutable profile attributes, keyed by the
+// token-verified identity (issuer, subject). Matching no row (unprovisioned
+// caller) yields no RETURNING row, which the repository maps to ErrNotFound.
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.OidcIssuer,
+		arg.OidcSubject,
+		arg.Username,
+		arg.DisplayName,
+		arg.Email,
+		arg.PreferredCurrency,
+		arg.Locale,
+		arg.Timezone,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.OidcIssuer,
+		&i.OidcSubject,
+		&i.Email,
+		&i.CreatedAt,
+		&i.Username,
+		&i.DisplayName,
+		&i.PreferredCurrency,
+		&i.Locale,
+		&i.Timezone,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

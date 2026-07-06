@@ -29,21 +29,52 @@ var ErrConflict = errors.New("user identity already exists")
 // ErrConflict so the service can reject it cleanly rather than re-reading.
 var ErrEmailTaken = errors.New("email already linked to another identity")
 
-// The unique constraint names are declared in the users migration; we map each
-// to a distinct domain error so the service can tell an identity collision apart
-// from an email already linked to a different identity.
+// ErrUsernameTaken is returned when a profile update collides on the username —
+// the handle is already in use by another user. The service maps it to a clean
+// conflict rather than a 500.
+var ErrUsernameTaken = errors.New("username already taken")
+
+// The unique constraint/index names are declared in the users migrations; we map
+// each to a distinct domain error so the service can tell an identity collision
+// apart from an email or username already in use.
 const (
 	constraintIdentity = "user_identity_key"
 	constraintEmail    = "user_email_key"
+	constraintUsername = "user_username_key"
 )
 
 // User is the repository-level view of a users row. Identifiers are canonical
-// UUID strings so layers above never depend on pgtype.
+// UUID strings so layers above never depend on pgtype. The profile fields below
+// (added in FNS-93) are nullable columns; a NULL is surfaced as the empty string
+// so callers never handle pgtype.
 type User struct {
 	ID      string
 	Issuer  string
 	Subject string
 	Email   string
+
+	// Mutable profile attributes (empty string == unset/NULL in the DB).
+	Username          string
+	DisplayName       string
+	PreferredCurrency string
+	Locale            string
+	Timezone          string
+}
+
+// ProfileUpdate is the set of mutable profile attributes a UpdateProfile writes,
+// addressed by the token-verified identity (Issuer, Subject). Full-replace: every
+// field is written. Username and Email are required (non-empty) by the service
+// before it calls here; the remaining fields are optional and an empty string is
+// persisted as NULL.
+type ProfileUpdate struct {
+	Issuer            string
+	Subject           string
+	Username          string
+	DisplayName       string
+	Email             string
+	PreferredCurrency string
+	Locale            string
+	Timezone          string
 }
 
 // Repository provides identity data access backed by the sqlc query layer.
@@ -97,19 +128,68 @@ func (r *Repository) Create(ctx context.Context, issuer, subject, email string) 
 	return toUser(row)
 }
 
+// UpdateProfile writes the caller's mutable profile attributes in full,
+// addressed by (issuer, subject). It returns ErrNotFound when no user matches
+// that identity (an unprovisioned caller — UpdateProfile never creates a user),
+// ErrUsernameTaken / ErrEmailTaken when the handle or email is already in use by
+// another user. Optional fields left empty are stored as NULL.
+func (r *Repository) UpdateProfile(ctx context.Context, p ProfileUpdate) (User, error) {
+	row, err := r.q.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
+		OidcIssuer:        p.Issuer,
+		OidcSubject:       p.Subject,
+		Username:          toPgText(p.Username),
+		DisplayName:       toPgText(p.DisplayName),
+		Email:             p.Email,
+		PreferredCurrency: toPgText(p.PreferredCurrency),
+		Locale:            toPgText(p.Locale),
+		Timezone:          toPgText(p.Timezone),
+	})
+	if err != nil {
+		if errors.Is(pgerr.Classify(err), pgerr.ErrNotFound) {
+			return User{}, ErrNotFound
+		}
+		if errors.Is(pgerr.Classify(err), pgerr.ErrUniqueViolation) {
+			switch name := pgerr.ConstraintName(err); name {
+			case constraintUsername:
+				return User{}, ErrUsernameTaken
+			case constraintEmail:
+				return User{}, ErrEmailTaken
+			default:
+				return User{}, fmt.Errorf("update profile: unexpected unique violation on %q: %w", name, err)
+			}
+		}
+		return User{}, fmt.Errorf("update profile: %w", err)
+	}
+	return toUser(row)
+}
+
 // toUser maps a generated sqlc row into the repository-level User, rendering the
-// UUID as its canonical string.
+// UUID as its canonical string and NULL profile columns as empty strings.
 func toUser(row sqlc.User) (User, error) {
 	id, err := fromPgUUID(row.ID)
 	if err != nil {
 		return User{}, fmt.Errorf("decode user id: %w", err)
 	}
 	return User{
-		ID:      id.String(),
-		Issuer:  row.OidcIssuer,
-		Subject: row.OidcSubject,
-		Email:   row.Email,
+		ID:                id.String(),
+		Issuer:            row.OidcIssuer,
+		Subject:           row.OidcSubject,
+		Email:             row.Email,
+		Username:          row.Username.String,
+		DisplayName:       row.DisplayName.String,
+		PreferredCurrency: row.PreferredCurrency.String,
+		Locale:            row.Locale.String,
+		Timezone:          row.Timezone.String,
 	}, nil
+}
+
+// toPgText maps a Go string to a pgtype.Text, treating the empty string as SQL
+// NULL so optional profile fields round-trip as "unset" rather than "".
+func toPgText(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
 }
 
 // fromPgUUID converts a pgtype.UUID into a uuid.UUID. It errors rather than

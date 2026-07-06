@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpchealth"
 	"connectrpc.com/grpcreflect"
+	"connectrpc.com/validate"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
@@ -50,29 +51,46 @@ func server(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) error {
 	return serve(ctx, srv, lis, cfg.TLS, cfg.HTTP.ShutdownTimeout)
 }
 
-// newMux builds the HTTP mux exposing the identity service, gRPC health, and
-// gRPC reflection, all wrapped with the shared logging/recovery interceptors.
-// verifier is the OIDC seam the identity handler uses to authenticate the
-// caller's access token.
+// newMux builds the HTTP mux exposing the identity and profile services, gRPC
+// health, and gRPC reflection, all wrapped with the shared interceptors.
+// verifier is the OIDC seam the handlers use to authenticate the caller's access
+// token.
 func newMux(pool *pgxpool.Pool, logger *slog.Logger, verifier oidc.Verifier) *http.ServeMux {
+	// Enforces the protovalidate constraints declared in the .proto messages
+	// (e.g. username shape, email, currency) before a request reaches a handler,
+	// returning InvalidArgument on failure.
+	validator := validate.NewInterceptor()
+
 	// Order matters: the sanitizer is outermost so it has the final say on the
 	// client-facing error; logging runs inside it so it still records the full
-	// error; recovery is innermost, closest to the handler, to catch panics.
+	// error; validation runs next so rejects are logged and pass through the
+	// sanitizer as author-controlled InvalidArgument; recovery is innermost,
+	// closest to the handler, to catch panics.
 	interceptors := connect.WithInterceptors(
 		middleware.NewErrorSanitizerInterceptor(),
 		middleware.NewLoggingInterceptor(logger),
+		validator,
 		middleware.NewRecoveryInterceptor(logger),
 	)
 
-	identitySrv := api.NewIdentityServer(service.NewIdentityService(repository.New(pool)), verifier)
+	repo := repository.New(pool)
+	identitySrv := api.NewIdentityServer(service.NewIdentityService(repo), verifier)
+	profileSrv := api.NewProfileServer(service.NewProfileService(repo), verifier)
 
 	mux := http.NewServeMux()
 	mux.Handle(authxpbconnect.NewIdentityServiceHandler(identitySrv, interceptors))
+	mux.Handle(authxpbconnect.NewProfileServiceHandler(profileSrv, interceptors))
 
-	checker := grpchealth.NewStaticChecker(authxpbconnect.IdentityServiceName)
+	checker := grpchealth.NewStaticChecker(
+		authxpbconnect.IdentityServiceName,
+		authxpbconnect.ProfileServiceName,
+	)
 	mux.Handle(grpchealth.NewHandler(checker))
 
-	reflector := grpcreflect.NewStaticReflector(authxpbconnect.IdentityServiceName)
+	reflector := grpcreflect.NewStaticReflector(
+		authxpbconnect.IdentityServiceName,
+		authxpbconnect.ProfileServiceName,
+	)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
