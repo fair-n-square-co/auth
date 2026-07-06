@@ -39,7 +39,7 @@ jobs:
   # Only runs for manual dispatch: derives the X.Y.Z-alpha.<run> pre-release tag.
   version:
     name: Compute pre-release tag
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event_name == 'workflow_dispatch'
     outputs:
       tag: ${{ steps.svu.outputs.tag }}
@@ -81,7 +81,7 @@ jobs:
     # still blocks the build if `version` actually failed.
     if: ${{ always() && !cancelled() && needs.version.result != 'failure' }}
     name: Build & publish (${{ matrix.image.name }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read        # checkout
       packages: write       # push images to GHCR
