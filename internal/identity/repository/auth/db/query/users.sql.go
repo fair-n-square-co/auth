@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: users.sql
 
-package sqlc
+package query
 
 import (
 	"context"
@@ -25,8 +25,8 @@ type CreateUserParams struct {
 }
 
 // sqlc query definitions for the canonical user record. Run `just generate`
-// to (re)generate typed Go into internal/auth/db/sqlc. Mirrors core's naming
-// (CreateUser :one, GetUserBy... :one).
+// to (re)generate typed Go into internal/identity/repository/auth/db/query.
+// Mirrors core's naming (CreateUser :one, GetUserBy... :one).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.OidcIssuer, arg.OidcSubject, arg.Email)
 	var i User

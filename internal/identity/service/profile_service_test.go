@@ -119,12 +119,12 @@ func TestUpdateProfile_Invalid(t *testing.T) {
 		want error
 	}{
 		"username too short": {mutate(func(in *service.ProfileInput) { in.Username = "ab" }), service.ErrInvalidProfile},
-		"username bad chars":  {mutate(func(in *service.ProfileInput) { in.Username = "alice!" }), service.ErrInvalidProfile},
-		"username reserved":   {mutate(func(in *service.ProfileInput) { in.Username = "admin" }), service.ErrUsernameReserved},
-		"email malformed":     {mutate(func(in *service.ProfileInput) { in.Email = "notanemail" }), service.ErrInvalidProfile},
-		"email empty":         {mutate(func(in *service.ProfileInput) { in.Email = "" }), service.ErrInvalidProfile},
-		"currency bad":        {mutate(func(in *service.ProfileInput) { in.PreferredCurrency = "AUDD" }), service.ErrInvalidProfile},
-		"timezone unknown":    {mutate(func(in *service.ProfileInput) { in.Timezone = "Mars/Phobos" }), service.ErrInvalidTimezone},
+		"username bad chars": {mutate(func(in *service.ProfileInput) { in.Username = "alice!" }), service.ErrInvalidProfile},
+		"username reserved":  {mutate(func(in *service.ProfileInput) { in.Username = "admin" }), service.ErrUsernameReserved},
+		"email malformed":    {mutate(func(in *service.ProfileInput) { in.Email = "notanemail" }), service.ErrInvalidProfile},
+		"email empty":        {mutate(func(in *service.ProfileInput) { in.Email = "" }), service.ErrInvalidProfile},
+		"currency bad":       {mutate(func(in *service.ProfileInput) { in.PreferredCurrency = "AUDD" }), service.ErrInvalidProfile},
+		"timezone unknown":   {mutate(func(in *service.ProfileInput) { in.Timezone = "Mars/Phobos" }), service.ErrInvalidTimezone},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

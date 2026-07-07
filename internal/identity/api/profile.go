@@ -19,8 +19,8 @@ import (
 //
 //go:generate go run go.uber.org/mock/mockgen -destination=mocks/profile.go -package=mocks . ProfileService
 type ProfileService interface {
-	GetProfile(ctx context.Context, ident oidc.TokenIdentity) (service.Profile, error)
-	UpdateProfile(ctx context.Context, ident oidc.TokenIdentity, in service.ProfileInput) (service.Profile, error)
+	GetProfile(ctx context.Context, identity oidc.TokenIdentity) (service.Profile, error)
+	UpdateProfile(ctx context.Context, identity oidc.TokenIdentity, in service.ProfileInput) (service.Profile, error)
 }
 
 // ProfileServer implements the connect ProfileService handler: the user-facing
@@ -52,12 +52,12 @@ func (s *ProfileServer) GetProfile(
 	ctx context.Context,
 	req *connect.Request[authxpb.GetProfileRequest],
 ) (*connect.Response[authxpb.GetProfileResponse], error) {
-	ident, err := s.identify(ctx, req.Header())
+	identity, err := s.identify(ctx, req.Header())
 	if err != nil {
 		return nil, err
 	}
 
-	profile, err := s.svc.GetProfile(ctx, ident)
+	profile, err := s.svc.GetProfile(ctx, identity)
 	if err != nil {
 		return nil, profileError(err)
 	}
@@ -74,7 +74,7 @@ func (s *ProfileServer) UpdateProfile(
 	ctx context.Context,
 	req *connect.Request[authxpb.UpdateProfileRequest],
 ) (*connect.Response[authxpb.UpdateProfileResponse], error) {
-	ident, err := s.identify(ctx, req.Header())
+	identity, err := s.identify(ctx, req.Header())
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *ProfileServer) UpdateProfile(
 		Timezone:          prefs.GetTimezone(),
 	}
 
-	profile, err := s.svc.UpdateProfile(ctx, ident, in)
+	profile, err := s.svc.UpdateProfile(ctx, identity, in)
 	if err != nil {
 		return nil, profileError(err)
 	}
@@ -107,11 +107,11 @@ func (s *ProfileServer) identify(ctx context.Context, header http.Header) (oidc.
 	if err != nil {
 		return oidc.TokenIdentity{}, connect.NewError(connect.CodeUnauthenticated, err)
 	}
-	ident, err := s.verifier.Verify(ctx, token)
+	identity, err := s.verifier.Verify(ctx, token)
 	if err != nil {
 		return oidc.TokenIdentity{}, connect.NewError(connect.CodeUnauthenticated, err)
 	}
-	return ident, nil
+	return identity, nil
 }
 
 // profileError maps a profile service error to the appropriate connect code and,

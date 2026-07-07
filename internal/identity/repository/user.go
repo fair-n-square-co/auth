@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/fair-n-square-co/auth/internal/auth/db/sqlc"
+	"github.com/fair-n-square-co/auth/internal/identity/repository/auth/db/query"
 	"github.com/fair-n-square-co/auth/pkg/pgerr"
 )
 
@@ -45,7 +45,7 @@ const (
 
 // User is the repository-level view of a users row. Identifiers are canonical
 // UUID strings so layers above never depend on pgtype. The profile fields below
-// (added in FNS-93) are nullable columns; a NULL is surfaced as the empty string
+// are nullable columns; a NULL is surfaced as the empty string
 // so callers never handle pgtype.
 type User struct {
 	ID      string
@@ -79,17 +79,17 @@ type ProfileUpdate struct {
 
 // Repository provides identity data access backed by the sqlc query layer.
 type Repository struct {
-	q *sqlc.Queries
+	q *query.Queries
 }
 
-// New builds a Repository over any sqlc.DBTX (e.g. a *pgxpool.Pool).
-func New(db sqlc.DBTX) *Repository {
-	return &Repository{q: sqlc.New(db)}
+// New builds a Repository over any query.DBTX (e.g. a *pgxpool.Pool).
+func New(db query.DBTX) *Repository {
+	return &Repository{q: query.New(db)}
 }
 
 // GetByIssuerSubject returns the user linked to (issuer, subject), or ErrNotFound.
 func (r *Repository) GetByIssuerSubject(ctx context.Context, issuer, subject string) (User, error) {
-	row, err := r.q.GetUserByIssuerSubject(ctx, sqlc.GetUserByIssuerSubjectParams{
+	row, err := r.q.GetUserByIssuerSubject(ctx, query.GetUserByIssuerSubjectParams{
 		OidcIssuer:  issuer,
 		OidcSubject: subject,
 	})
@@ -106,7 +106,7 @@ func (r *Repository) GetByIssuerSubject(ctx context.Context, issuer, subject str
 // violation on (oidc_issuer, oidc_subject) is returned as ErrConflict; a
 // violation on email is returned as ErrEmailTaken.
 func (r *Repository) Create(ctx context.Context, issuer, subject, email string) (User, error) {
-	row, err := r.q.CreateUser(ctx, sqlc.CreateUserParams{
+	row, err := r.q.CreateUser(ctx, query.CreateUserParams{
 		OidcIssuer:  issuer,
 		OidcSubject: subject,
 		Email:       email,
@@ -134,7 +134,7 @@ func (r *Repository) Create(ctx context.Context, issuer, subject, email string) 
 // ErrUsernameTaken / ErrEmailTaken when the handle or email is already in use by
 // another user. Optional fields left empty are stored as NULL.
 func (r *Repository) UpdateProfile(ctx context.Context, p ProfileUpdate) (User, error) {
-	row, err := r.q.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
+	row, err := r.q.UpdateUserProfile(ctx, query.UpdateUserProfileParams{
 		OidcIssuer:        p.Issuer,
 		OidcSubject:       p.Subject,
 		Username:          toPgText(p.Username),
@@ -165,7 +165,7 @@ func (r *Repository) UpdateProfile(ctx context.Context, p ProfileUpdate) (User, 
 
 // toUser maps a generated sqlc row into the repository-level User, rendering the
 // UUID as its canonical string and NULL profile columns as empty strings.
-func toUser(row sqlc.User) (User, error) {
+func toUser(row query.User) (User, error) {
 	id, err := fromPgUUID(row.ID)
 	if err != nil {
 		return User{}, fmt.Errorf("decode user id: %w", err)

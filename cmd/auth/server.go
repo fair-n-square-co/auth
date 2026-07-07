@@ -61,16 +61,28 @@ func newMux(pool *pgxpool.Pool, logger *slog.Logger, verifier oidc.Verifier) *ht
 	// returning InvalidArgument on failure.
 	validator := validate.NewInterceptor()
 
-	// Order matters: the sanitizer is outermost so it has the final say on the
-	// client-facing error; logging runs inside it so it still records the full
-	// error; validation runs next so rejects are logged and pass through the
-	// sanitizer as author-controlled InvalidArgument; recovery is innermost,
-	// closest to the handler, to catch panics.
+	// Order matters (outermost → innermost):
+	//   1. recovery  — outermost so a panic anywhere in the chain (the sanitizer,
+	//                  logging, or the external validator — not just the handler)
+	//                  becomes a clean CodeInternal and is logged, instead of
+	//                  escaping to net/http.
+	//   2. sanitizer — has the final say on the client-facing message for server
+	//                  faults; wraps logging so the full error is still recorded
+	//                  before it is stripped.
+	//   3. logging   — records every RPC (and the unsanitized error) inside the
+	//                  sanitizer.
+	//   4. validator — innermost, closest to the handler: enforces the
+	//                  protovalidate constraints and rejects with InvalidArgument
+	//                  before the handler runs.
+	//
+	// TODO: add an authentication interceptor here when middleware setup lands, so
+	// the caller's access token is verified centrally (including the JWKS
+	// signature check) instead of each handler invoking the Verifier itself.
 	interceptors := connect.WithInterceptors(
+		middleware.NewRecoveryInterceptor(logger),
 		middleware.NewErrorSanitizerInterceptor(),
 		middleware.NewLoggingInterceptor(logger),
 		validator,
-		middleware.NewRecoveryInterceptor(logger),
 	)
 
 	repo := repository.New(pool)

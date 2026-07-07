@@ -1,6 +1,6 @@
 -- sqlc query definitions for the canonical user record. Run `just generate`
--- to (re)generate typed Go into internal/auth/db/sqlc. Mirrors core's naming
--- (CreateUser :one, GetUserBy... :one).
+-- to (re)generate typed Go into internal/identity/repository/auth/db/query.
+-- Mirrors core's naming (CreateUser :one, GetUserBy... :one).
 
 -- name: CreateUser :one
 INSERT INTO "user" (oidc_issuer, oidc_subject, email)

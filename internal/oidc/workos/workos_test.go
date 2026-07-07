@@ -36,13 +36,13 @@ func TestVerify_DecodesIssuerAndSubject(t *testing.T) {
 		"email": "not-read-from-token@example.com", // access token email is ignored
 	})
 
-	ident, err := v.Verify(context.Background(), token)
+	identity, err := v.Verify(context.Background(), token)
 
 	require.NoError(t, err)
 	assert.Equal(t, oidc.TokenIdentity{
 		Issuer:  "https://example.workos.com",
 		Subject: "user_01J0",
-	}, ident)
+	}, identity)
 }
 
 func TestVerify_DoesNotCheckSignature(t *testing.T) {
@@ -51,10 +51,10 @@ func TestVerify_DoesNotCheckSignature(t *testing.T) {
 	v := workos.NewVerifier("")
 	token := mintToken(t, map[string]any{"iss": "i", "sub": "s"})
 
-	ident, err := v.Verify(context.Background(), token)
+	identity, err := v.Verify(context.Background(), token)
 
 	require.NoError(t, err)
-	assert.Equal(t, "s", ident.Subject)
+	assert.Equal(t, "s", identity.Subject)
 }
 
 func TestVerify_Invalid(t *testing.T) {

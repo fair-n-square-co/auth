@@ -100,8 +100,8 @@ func NewProfileService(repo ProfileRepository) *ProfileService {
 
 // GetProfile returns the profile for the token-verified identity, or
 // ErrUserNotFound when the caller has not been provisioned yet.
-func (s *ProfileService) GetProfile(ctx context.Context, ident oidc.TokenIdentity) (Profile, error) {
-	issuer, subject := strings.TrimSpace(ident.Issuer), strings.TrimSpace(ident.Subject)
+func (s *ProfileService) GetProfile(ctx context.Context, identity oidc.TokenIdentity) (Profile, error) {
+	issuer, subject := strings.TrimSpace(identity.Issuer), strings.TrimSpace(identity.Subject)
 	if issuer == "" || subject == "" {
 		// The verifier should never yield a blank identity; guard anyway so a bug
 		// upstream surfaces as an explicit error rather than a global lookup.
@@ -122,8 +122,8 @@ func (s *ProfileService) GetProfile(ctx context.Context, ident oidc.TokenIdentit
 // persisted result. Errors: ErrInvalidProfile (bad input), ErrUserNotFound
 // (unprovisioned caller), ErrUsernameAlreadyTaken / ErrEmailAlreadyLinked
 // (conflicts with another user).
-func (s *ProfileService) UpdateProfile(ctx context.Context, ident oidc.TokenIdentity, in ProfileInput) (Profile, error) {
-	issuer, subject := strings.TrimSpace(ident.Issuer), strings.TrimSpace(ident.Subject)
+func (s *ProfileService) UpdateProfile(ctx context.Context, identity oidc.TokenIdentity, in ProfileInput) (Profile, error) {
+	issuer, subject := strings.TrimSpace(identity.Issuer), strings.TrimSpace(identity.Subject)
 	if issuer == "" || subject == "" {
 		return Profile{}, fmt.Errorf("%w: blank identity", ErrInvalidProfile)
 	}

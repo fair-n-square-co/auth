@@ -59,20 +59,20 @@ func (v *Verifier) Verify(_ context.Context, rawToken string) (oidc.TokenIdentit
 		return oidc.TokenIdentity{}, err
 	}
 
-	ident := oidc.TokenIdentity{
+	identity := oidc.TokenIdentity{
 		Issuer:  strings.TrimSpace(stringClaim(claims, claimIssuer)),
 		Subject: strings.TrimSpace(stringClaim(claims, claimSubject)),
 	}
 	// Issuer and subject together are the identity key, and both come from the
 	// token — reject either being absent here as a token fault (Unauthenticated)
 	// rather than letting it surface downstream as an invalid-argument client fault.
-	if ident.Issuer == "" {
+	if identity.Issuer == "" {
 		return oidc.TokenIdentity{}, fmt.Errorf("%w: missing issuer", oidc.ErrInvalidToken)
 	}
-	if ident.Subject == "" {
+	if identity.Subject == "" {
 		return oidc.TokenIdentity{}, fmt.Errorf("%w: missing subject", oidc.ErrInvalidToken)
 	}
-	return ident, nil
+	return identity, nil
 }
 
 // decodeClaims base64url-decodes and JSON-parses a JWT's payload segment without

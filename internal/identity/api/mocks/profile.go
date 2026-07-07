@@ -43,31 +43,31 @@ func (m *MockProfileService) EXPECT() *MockProfileServiceMockRecorder {
 }
 
 // GetProfile mocks base method.
-func (m *MockProfileService) GetProfile(ctx context.Context, ident oidc.TokenIdentity) (service.Profile, error) {
+func (m *MockProfileService) GetProfile(ctx context.Context, identity oidc.TokenIdentity) (service.Profile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProfile", ctx, ident)
+	ret := m.ctrl.Call(m, "GetProfile", ctx, identity)
 	ret0, _ := ret[0].(service.Profile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetProfile indicates an expected call of GetProfile.
-func (mr *MockProfileServiceMockRecorder) GetProfile(ctx, ident any) *gomock.Call {
+func (mr *MockProfileServiceMockRecorder) GetProfile(ctx, identity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProfile", reflect.TypeOf((*MockProfileService)(nil).GetProfile), ctx, ident)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProfile", reflect.TypeOf((*MockProfileService)(nil).GetProfile), ctx, identity)
 }
 
 // UpdateProfile mocks base method.
-func (m *MockProfileService) UpdateProfile(ctx context.Context, ident oidc.TokenIdentity, in service.ProfileInput) (service.Profile, error) {
+func (m *MockProfileService) UpdateProfile(ctx context.Context, identity oidc.TokenIdentity, in service.ProfileInput) (service.Profile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateProfile", ctx, ident, in)
+	ret := m.ctrl.Call(m, "UpdateProfile", ctx, identity, in)
 	ret0, _ := ret[0].(service.Profile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateProfile indicates an expected call of UpdateProfile.
-func (mr *MockProfileServiceMockRecorder) UpdateProfile(ctx, ident, in any) *gomock.Call {
+func (mr *MockProfileServiceMockRecorder) UpdateProfile(ctx, identity, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockProfileService)(nil).UpdateProfile), ctx, ident, in)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockProfileService)(nil).UpdateProfile), ctx, identity, in)
 }
