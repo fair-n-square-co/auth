@@ -66,7 +66,7 @@ func (s *IdentityServer) ResolveUser(
 	}
 
 	// Trusted identity from the token (TODO: the signature is not yet verified).
-	ident, err := s.verifier.Verify(ctx, token)
+	identity, err := s.verifier.Verify(ctx, token)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -75,8 +75,8 @@ func (s *IdentityServer) ResolveUser(
 	// request body. It attaches only to the token-verified identity above, so an
 	// empty/blank email surfaces as ErrInvalidClaims from the service below.
 	claims := oidc.IdentityClaims{
-		Issuer:  ident.Issuer,
-		Subject: ident.Subject,
+		Issuer:  identity.Issuer,
+		Subject: identity.Subject,
 		Email:   req.Msg.GetEmail(),
 	}
 
