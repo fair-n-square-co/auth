@@ -38,10 +38,14 @@ var ErrUserNotFound = errors.New("user not found")
 // another user. Maps to AlreadyExists.
 var ErrUsernameAlreadyTaken = errors.New("username already taken")
 
-// usernamePattern is the normalized (already lower-cased) form: 3-30 chars of
-// lowercase letters, digits, or underscore. Kept in sync with the protovalidate
-// constraint on UpdateProfileRequest.username (which allows mixed case on the
-// wire; we lower-case before matching).
+// usernamePattern is the shape of a well-formed handle in its normalized
+// (already lower-cased) form: 3-30 chars of lowercase letters, digits, or
+// underscore. Kept in sync with the protovalidate constraint on
+// UpdateProfileRequest.username, which allows mixed case on the wire (we
+// lower-case before matching) and makes the whole handle optional — callers may
+// send an empty username to mean "not chosen yet". The optionality lives at the
+// call site rather than in this pattern, so the pattern keeps meaning "a
+// well-formed handle" on its own.
 var usernamePattern = regexp.MustCompile(`^[a-z0-9_]{3,30}$`)
 
 // reservedUsernames are handles we refuse to hand out because they invite
@@ -171,11 +175,19 @@ func normalizeAndValidate(in ProfileInput) (ProfileInput, error) {
 		Timezone:          strings.TrimSpace(in.Timezone),
 	}
 
-	if !usernamePattern.MatchString(out.Username) {
-		return ProfileInput{}, fmt.Errorf("%w: username must be 3-30 chars of a-z, 0-9, underscore", ErrInvalidProfile)
-	}
-	if _, reserved := reservedUsernames[out.Username]; reserved {
-		return ProfileInput{}, fmt.Errorf("%w (%q)", ErrUsernameReserved, out.Username)
+	// The username is optional: a user provisioned from their email alone has not
+	// chosen one, and an update is a full replace, so "not chosen yet" arrives as
+	// an empty string. Validate only when set — and keep the reserved-handle check
+	// inside this guard, so an empty username can never be caught by an entry in
+	// reservedUsernames. An empty username persists as NULL, which the partial
+	// unique index exempts, so any number of users may have none.
+	if out.Username != "" {
+		if !usernamePattern.MatchString(out.Username) {
+			return ProfileInput{}, fmt.Errorf("%w: username must be 3-30 chars of a-z, 0-9, underscore", ErrInvalidProfile)
+		}
+		if _, reserved := reservedUsernames[out.Username]; reserved {
+			return ProfileInput{}, fmt.Errorf("%w (%q)", ErrUsernameReserved, out.Username)
+		}
 	}
 
 	// Require a bare, parseable address (mail.ParseAddress also accepts the
