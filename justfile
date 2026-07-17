@@ -12,8 +12,8 @@ export POSTGRES_DB := env_var_or_default("POSTGRES_DB", "auth")
 export AUTH_DB_CONNSTRING := env_var_or_default("AUTH_DB_CONNSTRING", "postgres://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@db:5432/" + POSTGRES_DB + "?sslmode=disable")
 
 # Connection string for the host machine talking to the compose Postgres
-# (published on 127.0.0.1:5432). Overridable via DATABASE_URL.
-local_db_url := env_var_or_default("DATABASE_URL", "postgres://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@localhost:5432/" + POSTGRES_DB + "?sslmode=disable")
+# (published on 127.0.0.1:5434). Overridable via DATABASE_URL.
+local_db_url := env_var_or_default("DATABASE_URL", "postgres://" + POSTGRES_USER + ":" + POSTGRES_PASSWORD + "@localhost:5434/" + POSTGRES_DB + "?sslmode=disable")
 
 build:
     @echo "Building..."
