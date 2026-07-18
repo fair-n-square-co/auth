@@ -252,6 +252,89 @@ func TestProfile_RoundTrip(t *testing.T) {
 	assert.Equal(t, "username is not available", detail.GetMessage())
 }
 
+// TestProfile_UnsetUsername is the acceptance test for a JIT-provisioned user
+// who has no username yet. It runs through the full interceptor stack against a
+// real Postgres, because that is the only place the two things that matter can
+// be proven: that protovalidate accepts an empty username on the wire, and that
+// an empty username persists as NULL rather than ''.
+//
+// The load-bearing step is the second user saving an empty username. An empty
+// string stored as '' would be a value like any other, and user_username_key
+// would enforce uniqueness across it — so the second user to save one would get
+// AlreadyExists. Only NULL, which the partial index exempts, lets both coexist.
+func TestProfile_UnsetUsername(t *testing.T) {
+	ctx := context.Background()
+	baseURL, issuer := startAuthServer(t)
+
+	identity := authxpbconnect.NewIdentityServiceClient(http.DefaultClient, baseURL)
+	profiles := authxpbconnect.NewProfileServiceClient(http.DefaultClient, baseURL)
+
+	provision := func(subject, email string) {
+		req := connect.NewRequest(&authxpb.ResolveUserRequest{Email: email})
+		req.Header().Set("Authorization", "Bearer "+mintToken(t, issuer, subject))
+		_, err := identity.ResolveUser(ctx, req)
+		require.NoError(t, err)
+	}
+	update := func(subject string, msg *authxpb.UpdateProfileRequest) (*connect.Response[authxpb.UpdateProfileResponse], error) {
+		req := connect.NewRequest(msg)
+		req.Header().Set("Authorization", "Bearer "+mintToken(t, issuer, subject))
+		return profiles.UpdateProfile(ctx, req)
+	}
+
+	provision("user_alice", "alice@example.com")
+	provision("user_bob", "bob@example.com")
+
+	// A provisioned user with no handle can still save other profile fields. This
+	// is the lockout this change removes: previously InvalidArgument.
+	alice, err := update("user_alice", &authxpb.UpdateProfileRequest{
+		Username:    "",
+		DisplayName: "Alice",
+		Email:       "alice@example.com",
+		Preferences: &authxpb.Preferences{PreferredCurrency: "AUD"},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, alice.Msg.GetProfile().GetUsername())
+	assert.Equal(t, "AUD", alice.Msg.GetProfile().GetPreferences().GetPreferredCurrency(), "a currency change must not be gated on choosing a username")
+
+	// The assertion that proves empty is NULL, not ''.
+	bob, err := update("user_bob", &authxpb.UpdateProfileRequest{
+		Username:    "",
+		DisplayName: "Bob",
+		Email:       "bob@example.com",
+		Preferences: &authxpb.Preferences{PreferredCurrency: "NZD"},
+	})
+	require.NoError(t, err, "a second user with no username must not collide with the first")
+	assert.Empty(t, bob.Msg.GetProfile().GetUsername())
+
+	// Reading back a user with no username yields empty, not an error.
+	getReq := connect.NewRequest(&authxpb.GetProfileRequest{})
+	getReq.Header().Set("Authorization", "Bearer "+mintToken(t, issuer, "user_alice"))
+	got, err := profiles.GetProfile(ctx, getReq)
+	require.NoError(t, err)
+	assert.Empty(t, got.Msg.GetProfile().GetUsername())
+	assert.Equal(t, "AUD", got.Msg.GetProfile().GetPreferences().GetPreferredCurrency())
+
+	// Having had none, a user can still claim a handle later.
+	claimed, err := update("user_alice", &authxpb.UpdateProfileRequest{
+		Username:    "alice_01",
+		DisplayName: "Alice",
+		Email:       "alice@example.com",
+		Preferences: &authxpb.Preferences{PreferredCurrency: "AUD"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "alice_01", claimed.Msg.GetProfile().GetUsername())
+
+	// And uniqueness still bites for a real handle.
+	_, err = update("user_bob", &authxpb.UpdateProfileRequest{
+		Username:    "alice_01",
+		DisplayName: "Bob",
+		Email:       "bob@example.com",
+		Preferences: &authxpb.Preferences{},
+	})
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeAlreadyExists, connect.CodeOf(err))
+}
+
 // firstErrorDetail returns the first authx ErrorDetail on a connect error, or nil.
 func firstErrorDetail(t *testing.T, cerr *connect.Error) *authxerrorspb.ErrorDetail {
 	t.Helper()

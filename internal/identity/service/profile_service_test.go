@@ -106,6 +106,60 @@ func TestUpdateProfile_NormalizesAndPersists(t *testing.T) {
 	assert.Equal(t, "AUD", got.PreferredCurrency)
 }
 
+// TestUpdateProfile_UnsetUsernameAccepted asserts a user who has not chosen a
+// handle can still save the rest of their profile. The empty username must reach
+// the repository as empty — that is what persists as NULL, which the partial
+// unique index exempts from uniqueness.
+func TestUpdateProfile_UnsetUsernameAccepted(t *testing.T) {
+	cases := map[string]string{
+		"unset":           "",
+		"whitespace only": "   ",
+	}
+	for name, username := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := mocks.NewMockProfileRepository(ctrl)
+
+			in := validProfileInput()
+			in.Username = username
+
+			stored := storedProfile()
+			stored.Username = ""
+			repo.EXPECT().UpdateProfile(gomock.Any(), repository.ProfileUpdate{
+				Issuer:            issuer,
+				Subject:           subject,
+				Username:          "",
+				DisplayName:       "Alice",
+				Email:             email,
+				PreferredCurrency: "AUD",
+				Locale:            "en-AU",
+				Timezone:          "Australia/Sydney",
+			}).Return(stored, nil)
+
+			got, err := service.NewProfileService(repo).UpdateProfile(context.Background(), tokenIdent(), in)
+
+			require.NoError(t, err)
+			assert.Empty(t, got.Username)
+		})
+	}
+}
+
+// TestGetProfile_NoUsername asserts reading back a user who never chose a handle
+// yields an empty username rather than an error — the read half of the
+// full-replace round trip the client performs.
+func TestGetProfile_NoUsername(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mocks.NewMockProfileRepository(ctrl)
+	stored := storedProfile()
+	stored.Username = ""
+	repo.EXPECT().GetByIssuerSubject(gomock.Any(), issuer, subject).Return(stored, nil)
+
+	got, err := service.NewProfileService(repo).GetProfile(context.Background(), tokenIdent())
+
+	require.NoError(t, err)
+	assert.Empty(t, got.Username)
+}
+
 // TestUpdateProfile_Invalid covers inputs the service rejects before any DB call.
 func TestUpdateProfile_Invalid(t *testing.T) {
 	base := validProfileInput()
